@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 8;
 
 export const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS analysis_types (
@@ -78,6 +78,57 @@ CREATE TABLE IF NOT EXISTS import_history (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE SET NULL
 );
+
+CREATE TABLE IF NOT EXISTS vaccines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  vaccine_date TEXT NOT NULL,
+  name TEXT NOT NULL,
+  dose TEXT NOT NULL DEFAULT '',
+  lot_number TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS medications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  dose TEXT NOT NULL DEFAULT '',
+  frequency TEXT NOT NULL DEFAULT 'daily',
+  start_date TEXT NOT NULL,
+  end_date TEXT DEFAULT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS milestones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  milestone_date TEXT NOT NULL,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS symptoms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symptom_date TEXT NOT NULL,
+  name TEXT NOT NULL,
+  severity TEXT NOT NULL DEFAULT 'moderate',
+  duration TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS symptom_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symptom_id INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  filename TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (symptom_id) REFERENCES symptoms(id) ON DELETE CASCADE
+);
 `;
 
 export const MIGRATIONS: Record<number, string[]> = {
@@ -101,5 +152,57 @@ export const MIGRATIONS: Record<number, string[]> = {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
     "ALTER TABLE records ADD COLUMN order_id INTEGER DEFAULT NULL REFERENCES orders(id) ON DELETE SET NULL",
+  ],
+  6: [
+    `CREATE TABLE IF NOT EXISTS vaccines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vaccine_date TEXT NOT NULL,
+      name TEXT NOT NULL,
+      dose TEXT NOT NULL DEFAULT '',
+      lot_number TEXT NOT NULL DEFAULT '',
+      provider TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS medications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      dose TEXT NOT NULL DEFAULT '',
+      frequency TEXT NOT NULL DEFAULT 'daily',
+      start_date TEXT NOT NULL,
+      end_date TEXT DEFAULT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    `CREATE TABLE IF NOT EXISTS milestones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      milestone_date TEXT NOT NULL,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'other',
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+  ],
+  7: [
+    `CREATE TABLE IF NOT EXISTS symptoms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      symptom_date TEXT NOT NULL,
+      name TEXT NOT NULL,
+      severity TEXT NOT NULL DEFAULT 'moderate',
+      duration TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+  ],
+  8: [
+    `CREATE TABLE IF NOT EXISTS symptom_photos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      symptom_id INTEGER NOT NULL,
+      data TEXT NOT NULL,
+      filename TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (symptom_id) REFERENCES symptoms(id) ON DELETE CASCADE
+    )`,
   ],
 };

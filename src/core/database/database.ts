@@ -132,6 +132,69 @@ export interface ImportHistory {
   created_at: string;
 }
 
+export interface Vaccine {
+  id: number;
+  vaccine_date: string;
+  name: string;
+  dose: string;
+  lot_number: string;
+  provider: string;
+  notes: string;
+  created_at: string;
+}
+
+export type MedicationFrequency = 'daily' | 'weekly' | 'monthly' | 'as-needed';
+
+export interface Medication {
+  id: number;
+  name: string;
+  dose: string;
+  frequency: MedicationFrequency;
+  start_date: string;
+  end_date: string | null;
+  is_active: number;
+  notes: string;
+  created_at: string;
+}
+
+export type MilestoneCategory = 'diet' | 'exercise' | 'lifestyle' | 'other';
+
+export interface Milestone {
+  id: number;
+  milestone_date: string;
+  title: string;
+  category: MilestoneCategory;
+  notes: string;
+  created_at: string;
+}
+
+export type SymptomSeverity = 'mild' | 'moderate' | 'severe';
+
+export interface Symptom {
+  id: number;
+  symptom_date: string;
+  name: string;
+  severity: SymptomSeverity;
+  duration: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface SymptomPhoto {
+  id: number;
+  symptom_id: number;
+  data: string;
+  filename: string;
+  created_at: string;
+}
+
+export interface HealthLogEntry {
+  type: 'vaccine' | 'medication' | 'milestone' | 'symptom';
+  id: number;
+  date: string;
+  label: string;
+}
+
 // --- Data Access ---
 
 export async function getAnalysisTypes(): Promise<AnalysisType[]> {
@@ -793,6 +856,291 @@ export async function mergeAnalysisTypes(sourceId: number, targetId: number): Pr
 
   // Delete the source analysis type
   await database.execute("DELETE FROM analysis_types WHERE id = $1", [sourceId]);
+}
+
+// --- Vaccines ---
+
+export async function getVaccines(): Promise<Vaccine[]> {
+  const database = await getDb();
+  return database.select<Vaccine[]>(
+    "SELECT * FROM vaccines ORDER BY vaccine_date DESC"
+  );
+}
+
+export async function getVaccine(id: number): Promise<Vaccine | null> {
+  const database = await getDb();
+  const rows = await database.select<Vaccine[]>(
+    "SELECT * FROM vaccines WHERE id = $1",
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
+export async function createVaccine(
+  data: Omit<Vaccine, "id" | "created_at">
+): Promise<number> {
+  const database = await getDb();
+  const result = await database.execute(
+    `INSERT INTO vaccines (vaccine_date, name, dose, lot_number, provider, notes)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [data.vaccine_date, data.name, data.dose, data.lot_number, data.provider, data.notes]
+  );
+  return result.lastInsertId ?? 0;
+}
+
+export async function updateVaccine(id: number, data: Partial<Vaccine>): Promise<void> {
+  const database = await getDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  let paramIdx = 1;
+
+  for (const [key, value] of Object.entries(data)) {
+    if (key === "id" || key === "created_at") continue;
+    fields.push(`${key} = $${paramIdx}`);
+    values.push(value);
+    paramIdx++;
+  }
+
+  if (fields.length === 0) return;
+
+  values.push(id);
+  await database.execute(
+    `UPDATE vaccines SET ${fields.join(", ")} WHERE id = $${paramIdx}`,
+    values
+  );
+}
+
+export async function deleteVaccine(id: number): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM vaccines WHERE id = $1", [id]);
+}
+
+// --- Medications ---
+
+export async function getMedications(activeOnly?: boolean): Promise<Medication[]> {
+  const database = await getDb();
+  if (activeOnly) {
+    return database.select<Medication[]>(
+      "SELECT * FROM medications WHERE is_active = 1 ORDER BY start_date DESC"
+    );
+  }
+  return database.select<Medication[]>(
+    "SELECT * FROM medications ORDER BY start_date DESC"
+  );
+}
+
+export async function getMedication(id: number): Promise<Medication | null> {
+  const database = await getDb();
+  const rows = await database.select<Medication[]>(
+    "SELECT * FROM medications WHERE id = $1",
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
+export async function createMedication(
+  data: Omit<Medication, "id" | "created_at">
+): Promise<number> {
+  const database = await getDb();
+  const result = await database.execute(
+    `INSERT INTO medications (name, dose, frequency, start_date, end_date, is_active, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [data.name, data.dose, data.frequency, data.start_date, data.end_date, data.is_active, data.notes]
+  );
+  return result.lastInsertId ?? 0;
+}
+
+export async function updateMedication(id: number, data: Partial<Medication>): Promise<void> {
+  const database = await getDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  let paramIdx = 1;
+
+  for (const [key, value] of Object.entries(data)) {
+    if (key === "id" || key === "created_at") continue;
+    fields.push(`${key} = $${paramIdx}`);
+    values.push(value);
+    paramIdx++;
+  }
+
+  if (fields.length === 0) return;
+
+  values.push(id);
+  await database.execute(
+    `UPDATE medications SET ${fields.join(", ")} WHERE id = $${paramIdx}`,
+    values
+  );
+}
+
+export async function deleteMedication(id: number): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM medications WHERE id = $1", [id]);
+}
+
+// --- Milestones ---
+
+export async function getMilestones(): Promise<Milestone[]> {
+  const database = await getDb();
+  return database.select<Milestone[]>(
+    "SELECT * FROM milestones ORDER BY milestone_date DESC"
+  );
+}
+
+export async function getMilestone(id: number): Promise<Milestone | null> {
+  const database = await getDb();
+  const rows = await database.select<Milestone[]>(
+    "SELECT * FROM milestones WHERE id = $1",
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
+export async function createMilestone(
+  data: Omit<Milestone, "id" | "created_at">
+): Promise<number> {
+  const database = await getDb();
+  const result = await database.execute(
+    `INSERT INTO milestones (milestone_date, title, category, notes)
+     VALUES ($1, $2, $3, $4)`,
+    [data.milestone_date, data.title, data.category, data.notes]
+  );
+  return result.lastInsertId ?? 0;
+}
+
+export async function updateMilestone(id: number, data: Partial<Milestone>): Promise<void> {
+  const database = await getDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  let paramIdx = 1;
+
+  for (const [key, value] of Object.entries(data)) {
+    if (key === "id" || key === "created_at") continue;
+    fields.push(`${key} = $${paramIdx}`);
+    values.push(value);
+    paramIdx++;
+  }
+
+  if (fields.length === 0) return;
+
+  values.push(id);
+  await database.execute(
+    `UPDATE milestones SET ${fields.join(", ")} WHERE id = $${paramIdx}`,
+    values
+  );
+}
+
+export async function deleteMilestone(id: number): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM milestones WHERE id = $1", [id]);
+}
+
+// --- Symptoms ---
+
+export async function getSymptoms(): Promise<Symptom[]> {
+  const database = await getDb();
+  return database.select<Symptom[]>(
+    "SELECT * FROM symptoms ORDER BY symptom_date DESC"
+  );
+}
+
+export async function getSymptom(id: number): Promise<Symptom | null> {
+  const database = await getDb();
+  const rows = await database.select<Symptom[]>(
+    "SELECT * FROM symptoms WHERE id = $1",
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
+export async function createSymptom(
+  data: Omit<Symptom, "id" | "created_at">
+): Promise<number> {
+  const database = await getDb();
+  const result = await database.execute(
+    `INSERT INTO symptoms (symptom_date, name, severity, duration, notes)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [data.symptom_date, data.name, data.severity, data.duration, data.notes]
+  );
+  return result.lastInsertId ?? 0;
+}
+
+export async function updateSymptom(id: number, data: Partial<Symptom>): Promise<void> {
+  const database = await getDb();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  let paramIdx = 1;
+
+  for (const [key, value] of Object.entries(data)) {
+    if (key === "id" || key === "created_at") continue;
+    fields.push(`${key} = $${paramIdx}`);
+    values.push(value);
+    paramIdx++;
+  }
+
+  if (fields.length === 0) return;
+
+  values.push(id);
+  await database.execute(
+    `UPDATE symptoms SET ${fields.join(", ")} WHERE id = $${paramIdx}`,
+    values
+  );
+}
+
+export async function deleteSymptom(id: number): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM symptom_photos WHERE symptom_id = $1", [id]);
+  await database.execute("DELETE FROM symptoms WHERE id = $1", [id]);
+}
+
+// --- Symptom Photos ---
+
+export async function getSymptomPhotos(symptomId: number): Promise<SymptomPhoto[]> {
+  const database = await getDb();
+  return database.select<SymptomPhoto[]>(
+    "SELECT * FROM symptom_photos WHERE symptom_id = $1 ORDER BY created_at",
+    [symptomId]
+  );
+}
+
+export async function getSymptomPhotoCount(symptomId: number): Promise<number> {
+  const database = await getDb();
+  const rows = await database.select<{ cnt: number }[]>(
+    "SELECT COUNT(*) as cnt FROM symptom_photos WHERE symptom_id = $1",
+    [symptomId]
+  );
+  return rows[0]?.cnt ?? 0;
+}
+
+export async function addSymptomPhoto(symptomId: number, data: string, filename: string): Promise<number> {
+  const database = await getDb();
+  const result = await database.execute(
+    `INSERT INTO symptom_photos (symptom_id, data, filename) VALUES ($1, $2, $3)`,
+    [symptomId, data, filename]
+  );
+  return result.lastInsertId ?? 0;
+}
+
+export async function deleteSymptomPhoto(id: number): Promise<void> {
+  const database = await getDb();
+  await database.execute("DELETE FROM symptom_photos WHERE id = $1", [id]);
+}
+
+// --- Health Log Aggregate ---
+
+export async function getRecentHealthLogEntries(limit: number = 5): Promise<HealthLogEntry[]> {
+  const database = await getDb();
+  return database.select<HealthLogEntry[]>(
+    `SELECT * FROM (
+       SELECT 'vaccine' as type, id, vaccine_date as date, name as label FROM vaccines
+       UNION ALL
+       SELECT 'medication' as type, id, start_date as date, name as label FROM medications
+       UNION ALL
+       SELECT 'milestone' as type, id, milestone_date as date, title as label FROM milestones
+       UNION ALL
+       SELECT 'symptom' as type, id, symptom_date as date, name as label FROM symptoms
+     ) ORDER BY date DESC LIMIT $1`,
+    [limit]
+  );
 }
 
 // --- Formula Evaluation ---

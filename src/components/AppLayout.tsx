@@ -4,11 +4,18 @@ import { theme } from "../core/theme/theme";
 import { useEffect, useState } from "react";
 
 const NAV_ITEMS = [
-  { path: "/", labelKey: "nav.home", icon: "🏠" },
-  { path: "/records", labelKey: "nav.records", icon: "📋" },
-  { path: "/orders", labelKey: "nav.orders", icon: "🧾" },
-  { path: "/analysis-types", labelKey: "nav.analysisTypes", icon: "🔬" },
-  { path: "/trends", labelKey: "nav.trends", icon: "📈" },
+  { path: "/", labelKey: "nav.home", icon: "\u{1F3E0}" },
+  { path: "/records", labelKey: "nav.records", icon: "\u{1F4CB}" },
+  { path: "/orders", labelKey: "nav.orders", icon: "\u{1F9FE}" },
+  { path: "/analysis-types", labelKey: "nav.analysisTypes", icon: "\u{1F52C}" },
+  { path: "/trends", labelKey: "nav.trends", icon: "\u{1F4C8}" },
+] as const;
+
+const HEALTH_LOG_CHILDREN = [
+  { path: "/health-log/vaccines", labelKey: "nav.vaccines", icon: "\u{1F489}" },
+  { path: "/health-log/medications", labelKey: "nav.medications", icon: "\u{1F48A}" },
+  { path: "/health-log/milestones", labelKey: "nav.milestones", icon: "\u{1F3C1}" },
+  { path: "/health-log/symptoms", labelKey: "nav.symptoms", icon: "\u{1FA7A}" },
 ] as const;
 
 function useWindowWidth() {
@@ -27,6 +34,13 @@ export default function AppLayout() {
   const location = useLocation();
   const width = useWindowWidth();
   const isDesktop = width >= theme.breakpoints.tablet;
+
+  const isHealthLogRoute = location.pathname.startsWith("/health-log");
+  const [healthLogExpanded, setHealthLogExpanded] = useState(isHealthLogRoute);
+
+  useEffect(() => {
+    if (isHealthLogRoute) setHealthLogExpanded(true);
+  }, [isHealthLogRoute]);
 
   const isActive = (path: string) => {
     if (path === "/") return location.pathname === "/";
@@ -52,6 +66,35 @@ export default function AppLayout() {
               <span style={styles.navLabel}>{t(item.labelKey)}</span>
             </button>
           ))}
+
+          {/* Health Log expandable group */}
+          <button
+            style={{
+              ...styles.sideNavItem,
+              ...(isHealthLogRoute ? styles.sideNavItemActive : {}),
+            }}
+            onClick={() => setHealthLogExpanded((prev) => !prev)}
+          >
+            <span style={styles.navIcon}>{"\u{1F4DD}"}</span>
+            <span style={styles.navLabel}>{t("nav.healthLog")}</span>
+            <span style={styles.expandArrow}>{healthLogExpanded ? "\u25B4" : "\u25BE"}</span>
+          </button>
+          {healthLogExpanded &&
+            HEALTH_LOG_CHILDREN.map((child) => (
+              <button
+                key={child.path}
+                style={{
+                  ...styles.sideNavItem,
+                  ...styles.sideNavChild,
+                  ...(isActive(child.path) ? styles.sideNavItemActive : {}),
+                }}
+                onClick={() => navigate(child.path)}
+              >
+                <span style={styles.navIcon}>{child.icon}</span>
+                <span style={styles.navLabel}>{t(child.labelKey)}</span>
+              </button>
+            ))}
+
           <div style={{ flex: 1 }} />
           <button
             style={{
@@ -60,7 +103,7 @@ export default function AppLayout() {
             }}
             onClick={() => navigate("/settings")}
           >
-            <span style={styles.navIcon}>⚙</span>
+            <span style={styles.navIcon}>{"\u2699"}</span>
             <span style={styles.navLabel}>{t("nav.settings")}</span>
           </button>
         </nav>
@@ -98,11 +141,21 @@ export default function AppLayout() {
         <button
           style={{
             ...styles.bottomNavItem,
+            ...(isHealthLogRoute ? styles.bottomNavItemActive : {}),
+          }}
+          onClick={() => navigate("/health-log")}
+        >
+          <span style={styles.bottomNavIcon}>{"\u{1F4DD}"}</span>
+          <span style={styles.bottomNavLabel}>{t("nav.healthLog")}</span>
+        </button>
+        <button
+          style={{
+            ...styles.bottomNavItem,
             ...(isActive("/settings") ? styles.bottomNavItemActive : {}),
           }}
           onClick={() => navigate("/settings")}
         >
-          <span style={styles.bottomNavIcon}>⚙</span>
+          <span style={styles.bottomNavIcon}>{"\u2699"}</span>
           <span style={styles.bottomNavLabel}>{t("nav.settings")}</span>
         </button>
       </nav>
@@ -147,6 +200,14 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "#E3F2FD",
     fontWeight: 700,
     borderLeftColor: theme.colors.primary,
+  },
+  sideNavChild: {
+    paddingLeft: 44,
+    fontSize: 13,
+  },
+  expandArrow: {
+    marginLeft: "auto",
+    fontSize: 10,
   },
   navIcon: { fontSize: 18 },
   navLabel: {},

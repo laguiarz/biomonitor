@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { getRecentRecords, getFlaggedResults, type MedicalRecord, type Result } from "../../core/database";
+import { getRecentRecords, getFlaggedResults, getRecentHealthLogEntries, type MedicalRecord, type Result, type HealthLogEntry } from "../../core/database";
 import { theme } from "../../core/theme/theme";
 
 type RecentRecord = MedicalRecord & { type_name_en: string; type_name_es: string; type_color: string };
@@ -12,18 +12,21 @@ export default function HomeScreen() {
   const navigate = useNavigate();
   const [recentRecords, setRecentRecords] = useState<RecentRecord[]>([]);
   const [flaggedResults, setFlaggedResults] = useState<FlaggedResult[]>([]);
+  const [healthLogEntries, setHealthLogEntries] = useState<HealthLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const lang = i18n.language.startsWith("es") ? "es" : "en";
 
   useEffect(() => {
     async function load() {
       try {
-        const [records, flagged] = await Promise.all([
+        const [records, flagged, healthLog] = await Promise.all([
           getRecentRecords(5),
           getFlaggedResults(),
+          getRecentHealthLogEntries(5),
         ]);
         setRecentRecords(records);
         setFlaggedResults(flagged);
+        setHealthLogEntries(healthLog);
       } catch (e) {
         console.error("Failed to load dashboard data:", e);
       } finally {
@@ -103,6 +106,37 @@ export default function HomeScreen() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </section>
+
+      {/* Health Log */}
+      <section style={styles.section}>
+        <h2 style={styles.sectionTitle}>{t("home.healthLog")}</h2>
+        {healthLogEntries.length === 0 ? (
+          <p style={styles.emptyText}>{t("home.noHealthLog")}</p>
+        ) : (
+          <div style={styles.recordList}>
+            {healthLogEntries.map((entry) => {
+              const emojiMap: Record<string, string> = { vaccine: "\u{1F489}", medication: "\u{1F48A}", milestone: "\u{1F3C1}", symptom: "\u{1FA7A}" };
+              const emoji = emojiMap[entry.type] ?? "\u{1F4DD}";
+              return (
+                <div
+                  key={`${entry.type}-${entry.id}`}
+                  style={styles.recordCard}
+                  onClick={() => {
+                    const routeMap: Record<string, string> = { vaccine: "vaccines", medication: "medications", milestone: "milestones", symptom: "symptoms" };
+                    navigate(`/health-log/${routeMap[entry.type] ?? "symptoms"}`);
+                  }}
+                >
+                  <div style={{ fontSize: 22 }}>{emoji}</div>
+                  <div style={styles.recordInfo}>
+                    <span style={styles.recordType}>{entry.label}</span>
+                    <span style={styles.recordDate}>{entry.date}</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
