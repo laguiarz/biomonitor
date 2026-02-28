@@ -3,12 +3,12 @@ import { useTranslation } from "react-i18next";
 import { theme } from "../core/theme/theme";
 import { useEffect, useState } from "react";
 
-const NAV_ITEMS = [
-  { path: "/", labelKey: "nav.home", icon: "\u{1F3E0}" },
+const LABS_PATHS = ["/records", "/orders", "/analysis-types", "/import"];
+
+const LABS_CHILDREN = [
   { path: "/records", labelKey: "nav.records", icon: "\u{1F4CB}" },
   { path: "/orders", labelKey: "nav.orders", icon: "\u{1F9FE}" },
   { path: "/analysis-types", labelKey: "nav.analysisTypes", icon: "\u{1F52C}" },
-  { path: "/trends", labelKey: "nav.trends", icon: "\u{1F4C8}" },
 ] as const;
 
 const HEALTH_LOG_CHILDREN = [
@@ -35,8 +35,15 @@ export default function AppLayout() {
   const width = useWindowWidth();
   const isDesktop = width >= theme.breakpoints.tablet;
 
+  const isLabsRoute = LABS_PATHS.some((p) => location.pathname.startsWith(p));
   const isHealthLogRoute = location.pathname.startsWith("/health-log");
+
+  const [labsExpanded, setLabsExpanded] = useState(isLabsRoute);
   const [healthLogExpanded, setHealthLogExpanded] = useState(isHealthLogRoute);
+
+  useEffect(() => {
+    if (isLabsRoute) setLabsExpanded(true);
+  }, [isLabsRoute]);
 
   useEffect(() => {
     if (isHealthLogRoute) setHealthLogExpanded(true);
@@ -47,60 +54,89 @@ export default function AppLayout() {
     return location.pathname.startsWith(path);
   };
 
+  function renderExpandableGroup(
+    labelKey: string,
+    icon: string,
+    isGroupActive: boolean,
+    expanded: boolean,
+    toggle: () => void,
+    children: ReadonlyArray<{ path: string; labelKey: string; icon: string }>,
+  ) {
+    return (
+      <>
+        <button
+          style={{
+            ...styles.sideNavItem,
+            ...(isGroupActive ? styles.sideNavItemActive : {}),
+          }}
+          onClick={toggle}
+        >
+          <span style={styles.navIcon}>{icon}</span>
+          <span style={styles.navLabel}>{t(labelKey)}</span>
+          <span style={styles.expandArrow}>{expanded ? "\u25B4" : "\u25BE"}</span>
+        </button>
+        {expanded &&
+          children.map((child) => (
+            <button
+              key={child.path}
+              style={{
+                ...styles.sideNavItem,
+                ...styles.sideNavChild,
+                ...(isActive(child.path) ? styles.sideNavItemActive : {}),
+              }}
+              onClick={() => navigate(child.path)}
+            >
+              <span style={styles.navIcon}>{child.icon}</span>
+              <span style={styles.navLabel}>{t(child.labelKey)}</span>
+            </button>
+          ))}
+      </>
+    );
+  }
+
   if (isDesktop) {
     return (
       <div style={styles.desktopLayout}>
-        {/* Side Rail */}
         <nav style={styles.sideRail}>
           <div style={styles.logo}>BioMonitor</div>
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.path}
-              style={{
-                ...styles.sideNavItem,
-                ...(isActive(item.path) ? styles.sideNavItemActive : {}),
-              }}
-              onClick={() => navigate(item.path)}
-            >
-              <span style={styles.navIcon}>{item.icon}</span>
-              <span style={styles.navLabel}>{t(item.labelKey)}</span>
-            </button>
-          ))}
 
-          {/* Health Log expandable group */}
+          {/* Home */}
           <button
-            style={{
-              ...styles.sideNavItem,
-              ...(isHealthLogRoute ? styles.sideNavItemActive : {}),
-            }}
-            onClick={() => setHealthLogExpanded((prev) => !prev)}
+            style={{ ...styles.sideNavItem, ...(isActive("/") ? styles.sideNavItemActive : {}) }}
+            onClick={() => navigate("/")}
           >
-            <span style={styles.navIcon}>{"\u{1F4DD}"}</span>
-            <span style={styles.navLabel}>{t("nav.healthLog")}</span>
-            <span style={styles.expandArrow}>{healthLogExpanded ? "\u25B4" : "\u25BE"}</span>
+            <span style={styles.navIcon}>{"\u{1F3E0}"}</span>
+            <span style={styles.navLabel}>{t("nav.home")}</span>
           </button>
-          {healthLogExpanded &&
-            HEALTH_LOG_CHILDREN.map((child) => (
-              <button
-                key={child.path}
-                style={{
-                  ...styles.sideNavItem,
-                  ...styles.sideNavChild,
-                  ...(isActive(child.path) ? styles.sideNavItemActive : {}),
-                }}
-                onClick={() => navigate(child.path)}
-              >
-                <span style={styles.navIcon}>{child.icon}</span>
-                <span style={styles.navLabel}>{t(child.labelKey)}</span>
-              </button>
-            ))}
+
+          {/* Labs */}
+          {renderExpandableGroup(
+            "nav.labs", "\u{1F9EA}", isLabsRoute,
+            labsExpanded, () => setLabsExpanded((p) => !p),
+            LABS_CHILDREN,
+          )}
+
+          {/* Health Log */}
+          {renderExpandableGroup(
+            "nav.healthLog", "\u{1F4DD}", isHealthLogRoute,
+            healthLogExpanded, () => setHealthLogExpanded((p) => !p),
+            HEALTH_LOG_CHILDREN,
+          )}
+
+          {/* Trends */}
+          <button
+            style={{ ...styles.sideNavItem, ...(isActive("/trends") ? styles.sideNavItemActive : {}) }}
+            onClick={() => navigate("/trends")}
+          >
+            <span style={styles.navIcon}>{"\u{1F4C8}"}</span>
+            <span style={styles.navLabel}>{t("nav.trends")}</span>
+          </button>
 
           <div style={{ flex: 1 }} />
+
+          {/* Settings */}
           <button
-            style={{
-              ...styles.sideNavItem,
-              ...(isActive("/settings") ? styles.sideNavItemActive : {}),
-            }}
+            style={{ ...styles.sideNavItem, ...(isActive("/settings") ? styles.sideNavItemActive : {}) }}
             onClick={() => navigate("/settings")}
           >
             <span style={styles.navIcon}>{"\u2699"}</span>
@@ -108,7 +144,6 @@ export default function AppLayout() {
           </button>
         </nav>
 
-        {/* Content */}
         <main style={styles.desktopContent}>
           <Outlet />
         </main>
@@ -117,54 +152,39 @@ export default function AppLayout() {
   }
 
   // Mobile layout
+  const mobileItems = [
+    { path: "/", labelKey: "nav.home", icon: "\u{1F3E0}", onClick: () => navigate("/") },
+    { path: "/labs", labelKey: "nav.labs", icon: "\u{1F9EA}", onClick: () => navigate("/labs"), active: isLabsRoute },
+    { path: "/health-log", labelKey: "nav.healthLog", icon: "\u{1F4DD}", onClick: () => navigate("/health-log"), active: isHealthLogRoute },
+    { path: "/trends", labelKey: "nav.trends", icon: "\u{1F4C8}", onClick: () => navigate("/trends") },
+    { path: "/settings", labelKey: "nav.settings", icon: "\u2699", onClick: () => navigate("/settings") },
+  ];
+
   return (
     <div style={styles.mobileLayout}>
       <main style={styles.mobileContent}>
         <Outlet />
       </main>
-
-      {/* Bottom Nav */}
       <nav style={styles.bottomNav}>
-        {NAV_ITEMS.map((item) => (
+        {mobileItems.map((item) => (
           <button
             key={item.path}
             style={{
               ...styles.bottomNavItem,
-              ...(isActive(item.path) ? styles.bottomNavItemActive : {}),
+              ...((item.active ?? isActive(item.path)) ? styles.bottomNavItemActive : {}),
             }}
-            onClick={() => navigate(item.path)}
+            onClick={item.onClick}
           >
             <span style={styles.bottomNavIcon}>{item.icon}</span>
             <span style={styles.bottomNavLabel}>{t(item.labelKey)}</span>
           </button>
         ))}
-        <button
-          style={{
-            ...styles.bottomNavItem,
-            ...(isHealthLogRoute ? styles.bottomNavItemActive : {}),
-          }}
-          onClick={() => navigate("/health-log")}
-        >
-          <span style={styles.bottomNavIcon}>{"\u{1F4DD}"}</span>
-          <span style={styles.bottomNavLabel}>{t("nav.healthLog")}</span>
-        </button>
-        <button
-          style={{
-            ...styles.bottomNavItem,
-            ...(isActive("/settings") ? styles.bottomNavItemActive : {}),
-          }}
-          onClick={() => navigate("/settings")}
-        >
-          <span style={styles.bottomNavIcon}>{"\u2699"}</span>
-          <span style={styles.bottomNavLabel}>{t("nav.settings")}</span>
-        </button>
       </nav>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  // Desktop
   desktopLayout: { display: "flex", height: "100vh", overflow: "hidden" },
   sideRail: {
     width: 200,
@@ -173,6 +193,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     padding: `${theme.spacing.md} 0`,
+    overflowY: "auto",
   },
   logo: {
     fontSize: 22,
@@ -216,8 +237,6 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "auto",
     backgroundColor: theme.colors.background,
   },
-
-  // Mobile
   mobileLayout: { display: "flex", flexDirection: "column", height: "100vh" },
   mobileContent: {
     flex: 1,

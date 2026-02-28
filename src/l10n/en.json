@@ -7,8 +7,9 @@
     "records": "Records",
     "orders": "Orders",
     "trends": "Trends",
-    "analysisTypes": "Analysis Types",
+    "analysisTypes": "Types",
     "settings": "Settings",
+    "labs": "Labs",
     "healthLog": "Health Log",
     "vaccines": "Vaccines",
     "medications": "Medications",
@@ -26,6 +27,15 @@
     "noAlerts": "All results are within normal range.",
     "healthLog": "Health Log",
     "noHealthLog": "No health log entries yet."
+  },
+  "labs": {
+    "title": "Labs",
+    "recordsCard": "Records",
+    "recordsDesc": "View your lab test results",
+    "ordersCard": "Orders",
+    "ordersDesc": "Lab orders and associated records",
+    "typesCard": "Analysis Types",
+    "typesDesc": "Manage test types and indicators"
   },
   "records": {
     "title": "Records",

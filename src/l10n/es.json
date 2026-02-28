@@ -7,8 +7,9 @@
     "records": "Registros",
     "orders": "Órdenes",
     "trends": "Tendencias",
-    "analysisTypes": "Tipos de Análisis",
+    "analysisTypes": "Tipos",
     "settings": "Ajustes",
+    "labs": "Análisis",
     "healthLog": "Registro de Salud",
     "vaccines": "Vacunas",
     "medications": "Medicamentos",
@@ -26,6 +27,15 @@
     "noAlerts": "Todos los resultados están dentro del rango normal.",
     "healthLog": "Registro de Salud",
     "noHealthLog": "Aún no hay entradas en el registro de salud."
+  },
+  "labs": {
+    "title": "Análisis",
+    "recordsCard": "Registros",
+    "recordsDesc": "Ver resultados de análisis clínicos",
+    "ordersCard": "Órdenes",
+    "ordersDesc": "Órdenes médicas y registros asociados",
+    "typesCard": "Tipos de Análisis",
+    "typesDesc": "Administrar tipos de análisis e indicadores"
   },
   "records": {
     "title": "Registros",

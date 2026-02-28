@@ -12,6 +12,7 @@ import OrderDetailScreen from "../../features/orders/OrderDetailScreen";
 import ImportScreen from "../../features/import/ImportScreen";
 import OcrReviewScreen from "../../features/import/OcrReviewScreen";
 import SettingsScreen from "../../features/settings/SettingsScreen";
+import LabsHubScreen from "../../features/labs/LabsHubScreen";
 import HealthLogHubScreen from "../../features/health-log/HealthLogHubScreen";
 import VaccinesListScreen from "../../features/health-log/vaccines/VaccinesListScreen";
 import VaccineEntryScreen from "../../features/health-log/vaccines/VaccineEntryScreen";
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { path: "/", element: <HomeScreen /> },
+      { path: "/labs", element: <LabsHubScreen /> },
       { path: "/records", element: <RecordsListScreen /> },
       { path: "/records/new", element: <RecordEntryScreen /> },
       { path: "/records/:id", element: <RecordDetailScreen /> },
