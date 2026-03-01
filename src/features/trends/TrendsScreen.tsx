@@ -1,16 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getAnalysisTypes,
   getIndicators,
   getIndicatorTrend,
   getResultsByAnalysisType,
+  getOrderPdfInfo,
+  getOrder,
+  upsertSingleResult,
   type AnalysisType,
   type Indicator,
   type TrendPoint,
   type AnalysisTypeResult,
 } from "../../core/database";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea } from "recharts";
+import { writeFile, BaseDirectory } from "@tauri-apps/plugin-fs";
+import { openPath } from "@tauri-apps/plugin-opener";
+import { tempDir, join } from "@tauri-apps/api/path";
 import { theme } from "../../core/theme/theme";
 
 /** Format "YYYY-MM-DD" → "MM-YY" */
@@ -31,6 +37,12 @@ export default function TrendsScreen() {
   const [selectedIndicatorId, setSelectedIndicatorId] = useState<number | null>(null);
   const [trendData, setTrendData] = useState<TrendPoint[]>([]);
   const [selectedIndicator, setSelectedIndicator] = useState<Indicator | null>(null);
+  const [editingCell, setEditingCell] = useState<{ recordId: number; indicatorId: number } | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const savingRef = useRef(false);
+  const [pdfMap, setPdfMap] = useState<Map<number, { filename: string }>>(new Map());
+  // Map record_id → order_id for columns that have orders
+  const [recordOrderMap, setRecordOrderMap] = useState<Map<number, number>>(new Map());
 
   useEffect(() => {
     getAnalysisTypes().then(setAnalysisTypes);
@@ -63,6 +75,55 @@ export default function TrendsScreen() {
     setSelectedIndicator(ind);
     getIndicatorTrend(selectedIndicatorId).then(setTrendData);
   }, [selectedIndicatorId, indicators]);
+
+  useEffect(() => {
+    const roMap = new Map<number, number>();
+    const orderIds = new Set<number>();
+    for (const r of allResults) {
+      if (r.order_id && !roMap.has(r.record_id)) {
+        roMap.set(r.record_id, r.order_id);
+        orderIds.add(r.order_id);
+      }
+    }
+    setRecordOrderMap(roMap);
+    getOrderPdfInfo([...orderIds]).then(setPdfMap);
+  }, [allResults]);
+
+  const handleOpenPdf = async (orderId: number) => {
+    const order = await getOrder(orderId);
+    if (!order?.pdf_data || !order?.pdf_filename) return;
+    try {
+      const binary = atob(order.pdf_data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      await writeFile(order.pdf_filename, bytes, { baseDir: BaseDirectory.Temp });
+      const tmp = await tempDir();
+      const filePath = await join(tmp, order.pdf_filename);
+      await openPath(filePath);
+    } catch (err) {
+      console.error("Failed to open PDF:", err);
+    }
+  };
+
+  const refreshResults = () => {
+    if (!selectedTypeId) return;
+    getResultsByAnalysisType(selectedTypeId).then(setAllResults);
+    if (selectedIndicatorId) getIndicatorTrend(selectedIndicatorId).then(setTrendData);
+  };
+
+  const saveEdit = async (ind: Indicator, recordId: number) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try {
+      const parsed = parseFloat(editValue);
+      if (isNaN(parsed)) { setEditingCell(null); return; }
+      await upsertSingleResult(recordId, ind.id, parsed, ind.reference_min, ind.reference_max);
+      setEditingCell(null);
+      refreshResults();
+    } finally {
+      savingRef.current = false;
+    }
+  };
 
   // Build table data: unique records as columns, keyed by record_id
   // Each column = one record (avoids collapsing same-date records)
@@ -121,9 +182,23 @@ export default function TrendsScreen() {
               <thead>
                 <tr>
                   <th style={{ ...styles.th, ...styles.stickyCol, zIndex: 3 }}>{t("trends.selectIndicator")}</th>
-                  {sortedCols.map((col) => (
-                    <th key={col.recordId} style={styles.th}>{col.label}</th>
-                  ))}
+                  {sortedCols.map((col) => {
+                    const orderId = recordOrderMap.get(col.recordId);
+                    const hasPdf = orderId ? pdfMap.has(orderId) : false;
+                    return (
+                      <th key={col.recordId} style={styles.th}>
+                        {col.label}
+                        {hasPdf && (
+                          <span
+                            role="button"
+                            title="PDF"
+                            style={styles.pdfIcon}
+                            onClick={() => handleOpenPdf(orderId!)}
+                          >&#128196;</span>
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -138,7 +213,7 @@ export default function TrendsScreen() {
                         backgroundColor: isSelected ? theme.colors.primaryLight + "22" : undefined,
                         cursor: "pointer",
                       }}
-                      onClick={() => setSelectedIndicatorId(ind.id)}
+                      onClick={(e) => { if (e.detail === 1) setSelectedIndicatorId(ind.id); }}
                     >
                       <td style={{ ...styles.td, ...styles.stickyCol, fontWeight: 600, whiteSpace: "nowrap" }}>
                         {lang === "es" ? ind.name_es : ind.name_en}
@@ -146,17 +221,54 @@ export default function TrendsScreen() {
                       </td>
                       {sortedCols.map((col) => {
                         const cell = row?.get(col.recordId);
-                        if (!cell) return <td key={col.recordId} style={styles.td}>—</td>;
+                        const isEditing = editingCell?.recordId === col.recordId && editingCell?.indicatorId === ind.id;
+                        if (!cell && !isEditing) return (
+                          <td
+                            key={col.recordId}
+                            style={styles.td}
+                            onClick={(e) => {
+                              if (e.detail === 2) {
+                                e.stopPropagation();
+                                setEditingCell({ recordId: col.recordId, indicatorId: ind.id });
+                                setEditValue("");
+                              }
+                            }}
+                          >—</td>
+                        );
                         return (
                           <td
                             key={col.recordId}
                             style={{
                               ...styles.td,
-                              color: cell.flagged ? theme.colors.error : theme.colors.textPrimary,
-                              fontWeight: cell.flagged ? 700 : 400,
+                              color: cell?.flagged ? theme.colors.error : theme.colors.textPrimary,
+                              fontWeight: cell?.flagged ? 700 : 400,
+                            }}
+                            onClick={(e) => {
+                              if (e.detail === 2) {
+                                e.stopPropagation();
+                                setEditingCell({ recordId: col.recordId, indicatorId: ind.id });
+                                setEditValue(cell ? String(cell.value) : "");
+                              }
                             }}
                           >
-                            {cell.value}
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                step="any"
+                                autoFocus
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveEdit(ind, col.recordId);
+                                  if (e.key === "Escape") setEditingCell(null);
+                                }}
+                                onBlur={() => saveEdit(ind, col.recordId)}
+                                style={styles.editInput}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            ) : (
+                              cell?.value ?? "—"
+                            )}
                           </td>
                         );
                       })}
@@ -264,5 +376,21 @@ const styles: Record<string, React.CSSProperties> = {
     color: theme.colors.textPrimary,
     marginBottom: theme.spacing.sm,
     marginLeft: theme.spacing.md,
+  },
+  pdfIcon: {
+    marginLeft: 4,
+    cursor: "pointer",
+    fontSize: 14,
+    opacity: 0.7,
+    transition: "opacity 0.15s",
+  },
+  editInput: {
+    width: 70,
+    padding: "2px 4px",
+    fontSize: 13,
+    textAlign: "right" as const,
+    border: `1px solid ${theme.colors.primary}`,
+    borderRadius: 3,
+    outline: "none",
   },
 };

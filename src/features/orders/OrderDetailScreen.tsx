@@ -12,6 +12,9 @@ import {
   type MedicalRecord,
   type AnalysisType,
 } from "../../core/database";
+import { writeFile, BaseDirectory } from "@tauri-apps/plugin-fs";
+import { openPath } from "@tauri-apps/plugin-opener";
+import { tempDir, join } from "@tauri-apps/api/path";
 import { theme } from "../../core/theme/theme";
 
 export default function OrderDetailScreen() {
@@ -98,6 +101,21 @@ export default function OrderDetailScreen() {
     setEditing(false);
   };
 
+  const handleOpenPdf = async () => {
+    if (!order?.pdf_data || !order?.pdf_filename) return;
+    try {
+      const binary = atob(order.pdf_data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      await writeFile(order.pdf_filename, bytes, { baseDir: BaseDirectory.Temp });
+      const tmp = await tempDir();
+      const filePath = await join(tmp, order.pdf_filename);
+      await openPath(filePath);
+    } catch (err) {
+      console.error("Failed to open PDF:", err);
+    }
+  };
+
   if (loading) {
     return <div style={styles.center}>{t("common.loading")}</div>;
   }
@@ -143,6 +161,9 @@ export default function OrderDetailScreen() {
         ) : (
           <>
             <button style={styles.editButton} onClick={startEditing}>{t("common.edit")}</button>
+            {order.pdf_data && (
+              <button style={styles.pdfButton} onClick={handleOpenPdf}>PDF</button>
+            )}
             <button style={styles.deleteButton} onClick={handleDelete}>{t("common.delete")}</button>
           </>
         )}
@@ -212,6 +233,16 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: theme.borderRadius,
     cursor: "pointer",
     fontSize: 14,
+  },
+  pdfButton: {
+    padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+    backgroundColor: "#E53935",
+    color: "#fff",
+    border: "none",
+    borderRadius: theme.borderRadius,
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 700,
   },
   deleteButton: {
     padding: `${theme.spacing.sm} ${theme.spacing.lg}`,

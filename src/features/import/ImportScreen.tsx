@@ -6,6 +6,13 @@ import { getSetting, getAnalysisTypes } from "../../core/database";
 import { extractTextFromPdf } from "../../core/services/pdfExtract";
 import { parseMedicalResults, type ExistingTypeInfo } from "../../core/services/llmParser";
 
+export interface ImportedFile {
+  parsed: { date: string | null; lab_name: string; doctor_name: string; groups: import("../../core/services/llmParser").ParsedGroup[] };
+  rawText: string;
+  fileName: string;
+  pdfBase64: string;
+}
+
 type Status = "idle" | "extracting" | "parsing" | "error";
 
 export default function ImportScreen() {
@@ -17,6 +24,7 @@ export default function ImportScreen() {
   const [apiKeyChecked, setApiKeyChecked] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
 
   useEffect(() => {
     getSetting("gemini_api_key").then((key) => {
@@ -26,44 +34,60 @@ export default function ImportScreen() {
   }, []);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !apiKey) return;
+    const files = e.target.files;
+    if (!files || files.length === 0 || !apiKey) return;
 
-    // Reset file input so same file can be re-selected
+    const fileList = Array.from(files);
     e.target.value = "";
-
     setError("");
 
+    const fileResults: ImportedFile[] = [];
+
     try {
-      // Step 1: Extract text
-      setStatus("extracting");
-      const text = await extractTextFromPdf(file);
-
-      if (!text.trim()) {
-        setError(t("import.noTextFound"));
-        setStatus("error");
-        return;
-      }
-
-      // Step 2: Parse with LLM (pass existing types so it reuses names)
-      setStatus("parsing");
       const types = await getAnalysisTypes();
       const existingTypes: ExistingTypeInfo[] = types.map((t) => ({
         name_en: t.name_en,
         name_es: t.name_es,
       }));
-      const parsed = await parseMedicalResults(text, apiKey, existingTypes);
 
-      if (!parsed.groups || parsed.groups.length === 0) {
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        if (fileList.length > 1) setProgress({ current: i + 1, total: fileList.length });
+
+        setStatus("extracting");
+        const text = await extractTextFromPdf(file);
+        if (!text.trim()) continue;
+
+        setStatus("parsing");
+        const parsed = await parseMedicalResults(text, apiKey, existingTypes);
+        if (!parsed.groups || parsed.groups.length === 0) continue;
+
+        // Read PDF as base64
+        const pdfBuffer = await file.arrayBuffer();
+        const pdfBytes = new Uint8Array(pdfBuffer);
+        let b64 = "";
+        const CHUNK = 8192;
+        for (let j = 0; j < pdfBytes.length; j += CHUNK) {
+          b64 += String.fromCharCode(...pdfBytes.subarray(j, j + CHUNK));
+        }
+
+        fileResults.push({
+          parsed,
+          rawText: text,
+          fileName: file.name,
+          pdfBase64: btoa(b64),
+        });
+      }
+
+      setProgress(null);
+
+      if (fileResults.length === 0) {
         setError(t("import.noResults"));
         setStatus("error");
         return;
       }
 
-      // Step 3: Navigate to review with parsed data
-      navigate("/import/review", {
-        state: { parsed, rawText: text, fileName: file.name },
-      });
+      navigate("/import/review", { state: { files: fileResults } });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (status === "extracting") {
@@ -71,6 +95,7 @@ export default function ImportScreen() {
       } else {
         setError(`${t("import.errorParse")} ${message}`);
       }
+      setProgress(null);
       setStatus("error");
     }
   };
@@ -101,6 +126,11 @@ export default function ImportScreen() {
           <p style={styles.loadingLabel}>
             {status === "extracting" ? t("import.extracting") : t("import.parsing")}
           </p>
+          {progress && (
+            <p style={styles.progressLabel}>
+              {t("import.fileProgress", { current: progress.current, total: progress.total })}
+            </p>
+          )}
         </div>
       ) : (
         <>
@@ -108,6 +138,7 @@ export default function ImportScreen() {
             ref={fileRef}
             type="file"
             accept=".pdf"
+            multiple
             style={{ display: "none" }}
             onChange={handleFileSelect}
           />
@@ -210,6 +241,7 @@ const styles: Record<string, React.CSSProperties> = {
     animation: "spin 1s linear infinite",
   },
   loadingLabel: { color: theme.colors.textSecondary, fontSize: 14 },
+  progressLabel: { color: theme.colors.textSecondary, fontSize: 13, marginTop: 0 },
   errorCard: {
     marginTop: theme.spacing.lg,
     padding: theme.spacing.lg,

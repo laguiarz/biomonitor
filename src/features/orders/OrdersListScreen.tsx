@@ -42,9 +42,14 @@ export default function OrdersListScreen() {
           &larr; {t("common.back")}
         </button>
       )}
-      <h1 style={styles.title}>
-        {t("orders.title")}{filterLabel ? `: ${filterLabel}` : ""}
-      </h1>
+      <div style={styles.header}>
+        <h1 style={styles.title}>
+          {t("orders.title")}{filterLabel ? `: ${filterLabel}` : ""}
+        </h1>
+        <button style={styles.importButton} onClick={() => navigate("/import")}>
+          {t("home.importResults")}
+        </button>
+      </div>
 
       {orders.length === 0 ? (
         <p style={styles.emptyText}>{t("orders.noOrders")}</p>
@@ -82,7 +87,18 @@ const styles: Record<string, React.CSSProperties> = {
   container: { padding: theme.spacing.lg, maxWidth: 800, margin: "0 auto" },
   center: { display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: theme.colors.textSecondary },
   backButton: { background: "none", border: "none", color: theme.colors.primary, cursor: "pointer", fontSize: 14, marginBottom: theme.spacing.md, padding: 0 },
-  title: { fontSize: 28, fontWeight: 700, color: theme.colors.textPrimary, marginBottom: theme.spacing.lg },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.lg },
+  title: { fontSize: 28, fontWeight: 700, color: theme.colors.textPrimary },
+  importButton: {
+    padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
+    backgroundColor: theme.colors.primary,
+    color: "#fff",
+    border: "none",
+    borderRadius: theme.borderRadius,
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: 600,
+  },
   emptyText: { color: theme.colors.textSecondary, fontStyle: "italic", textAlign: "center", marginTop: theme.spacing.xl },
   list: { display: "flex", flexDirection: "column", gap: theme.spacing.sm },
   card: {

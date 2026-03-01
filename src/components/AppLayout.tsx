@@ -3,10 +3,9 @@ import { useTranslation } from "react-i18next";
 import { theme } from "../core/theme/theme";
 import { useEffect, useState } from "react";
 
-const LABS_PATHS = ["/records", "/orders", "/analysis-types", "/import"];
+const LABS_PATHS = ["/orders", "/analysis-types", "/import"];
 
 const LABS_CHILDREN = [
-  { path: "/records", labelKey: "nav.records", icon: "\u{1F4CB}" },
   { path: "/orders", labelKey: "nav.orders", icon: "\u{1F9FE}" },
   { path: "/analysis-types", labelKey: "nav.analysisTypes", icon: "\u{1F52C}" },
 ] as const;
@@ -132,6 +131,15 @@ export default function AppLayout() {
             <span style={styles.navLabel}>{t("nav.trends")}</span>
           </button>
 
+          {/* Visit Prep */}
+          <button
+            style={{ ...styles.sideNavItem, ...(isActive("/visit-prep") ? styles.sideNavItemActive : {}) }}
+            onClick={() => navigate("/visit-prep")}
+          >
+            <span style={styles.navIcon}>{"\u{1F4C4}"}</span>
+            <span style={styles.navLabel}>{t("nav.visitPrep")}</span>
+          </button>
+
           <div style={{ flex: 1 }} />
 
           {/* Settings */}
@@ -157,6 +165,7 @@ export default function AppLayout() {
     { path: "/labs", labelKey: "nav.labs", icon: "\u{1F9EA}", onClick: () => navigate("/labs"), active: isLabsRoute },
     { path: "/health-log", labelKey: "nav.healthLog", icon: "\u{1F4DD}", onClick: () => navigate("/health-log"), active: isHealthLogRoute },
     { path: "/trends", labelKey: "nav.trends", icon: "\u{1F4C8}", onClick: () => navigate("/trends") },
+    { path: "/visit-prep", labelKey: "nav.visitPrep", icon: "\u{1F4C4}", onClick: () => navigate("/visit-prep") },
     { path: "/settings", labelKey: "nav.settings", icon: "\u2699", onClick: () => navigate("/settings") },
   ];
 

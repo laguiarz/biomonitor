@@ -97,6 +97,8 @@ export interface Order {
   doctor_name: string;
   notes: string;
   source: string;
+  pdf_data: string | null;
+  pdf_filename: string | null;
   created_at: string;
 }
 
@@ -406,9 +408,9 @@ export async function createOrder(
 ): Promise<number> {
   const database = await getDb();
   const result = await database.execute(
-    `INSERT INTO orders (order_date, lab_name, doctor_name, notes, source)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [data.order_date, data.lab_name, data.doctor_name, data.notes, data.source]
+    `INSERT INTO orders (order_date, lab_name, doctor_name, notes, source, pdf_data, pdf_filename)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [data.order_date, data.lab_name, data.doctor_name, data.notes, data.source, data.pdf_data, data.pdf_filename]
   );
   return result.lastInsertId ?? 0;
 }
@@ -475,6 +477,25 @@ export async function getResults(recordId: number): Promise<Result[]> {
   );
 }
 
+export async function upsertSingleResult(
+  recordId: number,
+  indicatorId: number,
+  value: number,
+  refMin: number | null,
+  refMax: number | null
+): Promise<void> {
+  const database = await getDb();
+  const isFlagged =
+    (refMin !== null && value < refMin) || (refMax !== null && value > refMax) ? 1 : 0;
+  await database.execute(
+    `INSERT INTO results (record_id, indicator_id, value, ref_min_snapshot, ref_max_snapshot, is_flagged)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT(record_id, indicator_id) DO UPDATE SET
+       value = $3, is_flagged = $6, ref_min_snapshot = $4, ref_max_snapshot = $5`,
+    [recordId, indicatorId, value, refMin, refMax, isFlagged]
+  );
+}
+
 export async function saveResults(recordId: number, results: Omit<Result, "id">[]): Promise<void> {
   const database = await getDb();
   // Delete existing results for this record
@@ -515,18 +536,32 @@ export interface AnalysisTypeResult {
   record_date: string;
   value: number;
   is_flagged: number;
+  order_id: number | null;
 }
 
 export async function getResultsByAnalysisType(analysisTypeId: number): Promise<AnalysisTypeResult[]> {
   const database = await getDb();
   return database.select<AnalysisTypeResult[]>(
-    `SELECT res.record_id, res.indicator_id, r.record_date, res.value, res.is_flagged
+    `SELECT res.record_id, res.indicator_id, r.record_date, res.value, res.is_flagged, r.order_id
      FROM results res
      JOIN records r ON r.id = res.record_id
      WHERE r.analysis_type_id = $1
      ORDER BY r.record_date ASC, r.id ASC`,
     [analysisTypeId]
   );
+}
+
+export async function getOrderPdfInfo(orderIds: number[]): Promise<Map<number, { filename: string }>> {
+  if (orderIds.length === 0) return new Map();
+  const database = await getDb();
+  const placeholders = orderIds.map((_, i) => `$${i + 1}`).join(",");
+  const rows = await database.select<{ id: number; pdf_filename: string }[]>(
+    `SELECT id, pdf_filename FROM orders WHERE id IN (${placeholders}) AND pdf_data IS NOT NULL AND pdf_filename IS NOT NULL`,
+    orderIds
+  );
+  const map = new Map<number, { filename: string }>();
+  for (const row of rows) map.set(row.id, { filename: row.pdf_filename });
+  return map;
 }
 
 export async function getRecentRecords(limit: number = 5): Promise<(MedicalRecord & { type_name_en: string; type_name_es: string; type_color: string })[]> {
@@ -1170,7 +1205,7 @@ export function evaluateFormula(formula: string, values: Map<number, number>): n
     // Safe evaluation: only arithmetic on validated expression
     const result = Function(`"use strict"; return (${expression});`)() as number;
     if (!isFinite(result)) return null;
-    return result;
+    return Math.round(result * 100) / 100;
   } catch {
     return null;
   }

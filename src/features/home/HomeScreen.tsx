@@ -44,19 +44,6 @@ export default function HomeScreen() {
     <div style={styles.container}>
       <h1 style={styles.title}>{t("home.title")}</h1>
 
-      {/* Quick Actions */}
-      <section style={styles.section}>
-        <h2 style={styles.sectionTitle}>{t("home.quickActions")}</h2>
-        <div style={styles.actions}>
-          <button style={styles.actionButton} onClick={() => navigate("/records/new")}>
-            + {t("home.addRecord")}
-          </button>
-          <button style={{ ...styles.actionButton, backgroundColor: theme.colors.secondary }} onClick={() => navigate("/import")}>
-            {t("home.importResults")}
-          </button>
-        </div>
-      </section>
-
       {/* Alerts */}
       {flaggedResults.length > 0 && (
         <section style={styles.section}>

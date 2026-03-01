@@ -1,9 +1,7 @@
 import { createBrowserRouter } from "react-router-dom";
 import AppLayout from "../../components/AppLayout";
 import HomeScreen from "../../features/home/HomeScreen";
-import RecordsListScreen from "../../features/records/RecordsListScreen";
 import RecordDetailScreen from "../../features/records/RecordDetailScreen";
-import RecordEntryScreen from "../../features/records/RecordEntryScreen";
 import TrendsScreen from "../../features/trends/TrendsScreen";
 import AnalysisTypesScreen from "../../features/analysis-types/AnalysisTypesScreen";
 import AnalysisTypeDetailScreen from "../../features/analysis-types/AnalysisTypeDetailScreen";
@@ -12,6 +10,7 @@ import OrderDetailScreen from "../../features/orders/OrderDetailScreen";
 import ImportScreen from "../../features/import/ImportScreen";
 import OcrReviewScreen from "../../features/import/OcrReviewScreen";
 import SettingsScreen from "../../features/settings/SettingsScreen";
+import VisitPrepScreen from "../../features/visit-prep/VisitPrepScreen";
 import LabsHubScreen from "../../features/labs/LabsHubScreen";
 import HealthLogHubScreen from "../../features/health-log/HealthLogHubScreen";
 import VaccinesListScreen from "../../features/health-log/vaccines/VaccinesListScreen";
@@ -29,10 +28,7 @@ export const router = createBrowserRouter([
     children: [
       { path: "/", element: <HomeScreen /> },
       { path: "/labs", element: <LabsHubScreen /> },
-      { path: "/records", element: <RecordsListScreen /> },
-      { path: "/records/new", element: <RecordEntryScreen /> },
       { path: "/records/:id", element: <RecordDetailScreen /> },
-      { path: "/records/:id/edit", element: <RecordEntryScreen /> },
       { path: "/orders", element: <OrdersListScreen /> },
       { path: "/orders/:id", element: <OrderDetailScreen /> },
       { path: "/analysis-types", element: <AnalysisTypesScreen /> },
@@ -53,6 +49,7 @@ export const router = createBrowserRouter([
       { path: "/health-log/symptoms", element: <SymptomsListScreen /> },
       { path: "/health-log/symptoms/new", element: <SymptomEntryScreen /> },
       { path: "/health-log/symptoms/:id/edit", element: <SymptomEntryScreen /> },
+      { path: "/visit-prep", element: <VisitPrepScreen /> },
       { path: "/settings", element: <SettingsScreen /> },
     ],
   },

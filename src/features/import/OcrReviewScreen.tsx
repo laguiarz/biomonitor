@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { theme } from "../../core/theme/theme";
-import type { ParsedReport, ParsedResult, ParsedGroup } from "../../core/services/llmParser";
+import type { ParsedResult, ParsedGroup } from "../../core/services/llmParser";
+import type { ImportedFile } from "./ImportScreen";
 import {
   getAnalysisTypes,
   getIndicators,
@@ -32,157 +33,181 @@ interface GroupSection {
   rows: MatchedRow[];
 }
 
+interface FileBlock {
+  fileName: string;
+  rawText: string;
+  pdfBase64: string;
+  date: string;
+  labName: string;
+  doctorName: string;
+  sections: GroupSection[];
+}
+
 export default function OcrReviewScreen() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const state = location.state as {
-    parsed: ParsedReport;
-    rawText: string;
-    fileName: string;
-  } | null;
+  const rawState = location.state as { files?: ImportedFile[] } | null;
+  const stateFiles = rawState?.files ?? null;
 
   const [allTypes, setAllTypes] = useState<AnalysisType[]>([]);
-  const [sections, setSections] = useState<GroupSection[]>([]);
-  const [date, setDate] = useState("");
-  const [labName, setLabName] = useState("");
-  const [doctorName, setDoctorName] = useState("");
+  const [fileBlocks, setFileBlocks] = useState<FileBlock[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
   const isEs = i18n.language.startsWith("es");
 
-  // Redirect if no parsed data
   useEffect(() => {
-    if (!state) {
-      navigate("/import", { replace: true });
-    }
-  }, [state, navigate]);
+    if (!stateFiles) navigate("/import", { replace: true });
+  }, [stateFiles, navigate]);
 
-  // Initialize form metadata from parsed data
   useEffect(() => {
-    if (!state) return;
-    const { parsed } = state;
-    setDate(parsed.date ?? new Date().toISOString().slice(0, 10));
-    setLabName(parsed.lab_name);
-    setDoctorName(parsed.doctor_name);
-  }, [state]);
-
-  // Load all types and build initial sections
-  useEffect(() => {
-    if (!state) return;
+    if (!stateFiles) return;
     getAnalysisTypes().then((types) => {
       setAllTypes(types);
-      buildSections(state.parsed.groups, types);
+      buildFileBlocks(stateFiles, types);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
+  }, []);
 
-  const buildSections = useCallback(
-    async (groups: ParsedGroup[], types: AnalysisType[]) => {
-      const newSections: GroupSection[] = [];
+  const buildFileBlocks = useCallback(
+    async (files: ImportedFile[], types: AnalysisType[]) => {
+      const blocks: FileBlock[] = [];
 
-      for (const group of groups) {
-        const matchedType = findMatchingType(group, types);
-        let indicators: Indicator[] = [];
-        let rows: MatchedRow[] = [];
+      for (const file of files) {
+        const sections: GroupSection[] = [];
 
-        if (matchedType) {
-          indicators = await getIndicators(matchedType.id);
-          rows = group.results.map((pr) => ({
-            parsed: pr,
-            indicatorId: findBestMatch(pr, indicators)?.id ?? null,
-            value: String(pr.value),
-          }));
-        } else {
-          rows = group.results.map((pr) => ({
-            parsed: pr,
-            indicatorId: null,
-            value: String(pr.value),
-          }));
+        for (const group of file.parsed.groups) {
+          const matchedType = findMatchingType(group, types);
+          let indicators: Indicator[] = [];
+          let rows: MatchedRow[];
+
+          if (matchedType) {
+            indicators = await getIndicators(matchedType.id);
+            rows = group.results.map((pr) => ({
+              parsed: pr,
+              indicatorId: findBestMatch(pr, indicators)?.id ?? null,
+              value: String(pr.value),
+            }));
+          } else {
+            rows = group.results.map((pr) => ({
+              parsed: pr,
+              indicatorId: null,
+              value: String(pr.value),
+            }));
+          }
+
+          sections.push({
+            group,
+            matchedTypeId: matchedType?.id ?? null,
+            isNewType: !matchedType,
+            creatingType: false,
+            typeCreated: false,
+            indicators,
+            rows,
+          });
         }
 
-        newSections.push({
-          group,
-          matchedTypeId: matchedType?.id ?? null,
-          isNewType: !matchedType,
-          creatingType: false,
-          typeCreated: false,
-          indicators,
-          rows,
+        blocks.push({
+          fileName: file.fileName,
+          rawText: file.rawText,
+          pdfBase64: file.pdfBase64,
+          date: file.parsed.date ?? new Date().toISOString().slice(0, 10),
+          labName: file.parsed.lab_name,
+          doctorName: file.parsed.doctor_name,
+          sections,
         });
       }
 
-      setSections(newSections);
+      setFileBlocks(blocks);
     },
-    []
+    [],
   );
 
-  if (!state) return null;
+  if (!stateFiles) return null;
 
+  const multiFile = fileBlocks.length > 1;
   const typeName = (at: AnalysisType) => (isEs ? at.name_es : at.name_en);
   const indName = (ind: Indicator) => (isEs ? ind.name_es : ind.name_en);
 
-  const handleTypeChange = async (sectionIdx: number, typeId: number | null) => {
-    setSections((prev) => {
+  // --- Updaters ---
+
+  const updateBlock = (fIdx: number, patch: Partial<FileBlock>) => {
+    setFileBlocks((prev) => {
       const next = [...prev];
-      const section = { ...next[sectionIdx] };
-      section.matchedTypeId = typeId;
-      section.isNewType = typeId === null;
-      next[sectionIdx] = section;
+      next[fIdx] = { ...next[fIdx], ...patch };
       return next;
     });
+  };
+
+  const updateSection = (fIdx: number, sIdx: number, patch: Partial<GroupSection>) => {
+    setFileBlocks((prev) => {
+      const next = [...prev];
+      const fb = { ...next[fIdx] };
+      const sections = [...fb.sections];
+      sections[sIdx] = { ...sections[sIdx], ...patch };
+      fb.sections = sections;
+      next[fIdx] = fb;
+      return next;
+    });
+  };
+
+  const updateRow = (fIdx: number, sIdx: number, rIdx: number, patch: Partial<MatchedRow>) => {
+    setFileBlocks((prev) => {
+      const next = [...prev];
+      const fb = { ...next[fIdx] };
+      const sections = [...fb.sections];
+      const section = { ...sections[sIdx] };
+      const rows = [...section.rows];
+      rows[rIdx] = { ...rows[rIdx], ...patch };
+      section.rows = rows;
+      sections[sIdx] = section;
+      fb.sections = sections;
+      next[fIdx] = fb;
+      return next;
+    });
+  };
+
+  const handleTypeChange = async (fIdx: number, sIdx: number, typeId: number | null) => {
+    updateSection(fIdx, sIdx, { matchedTypeId: typeId, isNewType: typeId === null });
 
     if (typeId) {
       const indicators = await getIndicators(typeId);
-      setSections((prev) => {
-        const next = [...prev];
-        const section = { ...next[sectionIdx] };
-        section.indicators = indicators;
-        section.rows = section.group.results.map((pr) => ({
+      const group = fileBlocks[fIdx].sections[sIdx].group;
+      updateSection(fIdx, sIdx, {
+        matchedTypeId: typeId,
+        isNewType: false,
+        indicators,
+        rows: group.results.map((pr) => ({
           parsed: pr,
           indicatorId: findBestMatch(pr, indicators)?.id ?? null,
           value: String(pr.value),
-        }));
-        next[sectionIdx] = section;
-        return next;
+        })),
       });
     }
   };
 
-  const handleCreateType = async (sectionIdx: number) => {
-    // Capture group data BEFORE any state updates to avoid stale closure
-    const group = sections[sectionIdx]?.group;
-    if (!group) {
-      console.error("No group data found for section", sectionIdx);
-      return;
-    }
+  const handleCreateType = async (fIdx: number, sIdx: number) => {
+    const group = fileBlocks[fIdx]?.sections[sIdx]?.group;
+    if (!group) return;
 
-    setSections((prev) => {
-      const next = [...prev];
-      next[sectionIdx] = { ...next[sectionIdx], creatingType: true };
-      return next;
-    });
+    updateSection(fIdx, sIdx, { creatingType: true });
 
     try {
-      // Create the analysis type
       const typeId = await createAnalysisType({
         name_en: group.analysis_type,
         name_es: group.analysis_type_es,
         description_en: "",
         description_es: "",
         icon_name: "clipboard",
-        color_hex: generateColor(sectionIdx),
+        color_hex: generateColor(sIdx),
         is_builtin: 0,
         is_active: 1,
       });
 
-      if (!typeId || typeId === 0) {
-        throw new Error("Failed to create analysis type: no valid ID returned");
-      }
+      if (!typeId || typeId === 0) throw new Error("Failed to create analysis type");
 
-      // Create indicators from parsed results
       for (const result of group.results) {
         await createIndicator({
           analysis_type_id: typeId,
@@ -196,141 +221,121 @@ export default function OcrReviewScreen() {
         });
       }
 
-      // Load the newly created indicators
       const indicators = await getIndicators(typeId);
-
-      // Refresh allTypes
       const updatedTypes = await getAnalysisTypes();
       setAllTypes(updatedTypes);
 
-      // Update section with matched indicators
-      setSections((prev) => {
-        const next = [...prev];
-        const s = { ...next[sectionIdx] };
-        s.matchedTypeId = typeId;
-        s.isNewType = false;
-        s.creatingType = false;
-        s.typeCreated = true;
-        s.indicators = indicators;
-        s.rows = group.results.map((pr) => ({
+      updateSection(fIdx, sIdx, {
+        matchedTypeId: typeId,
+        isNewType: false,
+        creatingType: false,
+        typeCreated: true,
+        indicators,
+        rows: group.results.map((pr) => ({
           parsed: pr,
           indicatorId: findBestMatch(pr, indicators)?.id ?? null,
           value: String(pr.value),
-        }));
-        next[sectionIdx] = s;
-        return next;
+        })),
       });
     } catch (err) {
       console.error("Failed to create analysis type:", err);
-      alert(
-        `Error creating analysis type "${group.analysis_type_es || group.analysis_type}": ${err instanceof Error ? err.message : String(err)}`
-      );
-      setSections((prev) => {
-        const next = [...prev];
-        next[sectionIdx] = { ...next[sectionIdx], creatingType: false };
-        return next;
-      });
+      alert(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      updateSection(fIdx, sIdx, { creatingType: false });
     }
   };
 
-  const handleIndicatorChange = (sectionIdx: number, rowIdx: number, indicatorId: number | null) => {
-    setSections((prev) => {
-      const next = [...prev];
-      const section = { ...next[sectionIdx] };
-      const rows = [...section.rows];
-      rows[rowIdx] = { ...rows[rowIdx], indicatorId };
-      section.rows = rows;
-      next[sectionIdx] = section;
-      return next;
-    });
-  };
-
-  const handleValueChange = (sectionIdx: number, rowIdx: number, value: string) => {
-    setSections((prev) => {
-      const next = [...prev];
-      const section = { ...next[sectionIdx] };
-      const rows = [...section.rows];
-      rows[rowIdx] = { ...rows[rowIdx], value };
-      section.rows = rows;
-      next[sectionIdx] = section;
-      return next;
-    });
-  };
+  // --- Counts ---
 
   const getSectionValidCount = (section: GroupSection): number =>
     section.rows.filter(
-      (r) => r.indicatorId !== null && r.value.trim() !== "" && !isNaN(Number(r.value))
+      (r) => r.indicatorId !== null && r.value.trim() !== "" && !isNaN(Number(r.value)),
     ).length;
 
-  const totalValidCount = sections.reduce((sum, s) => sum + (s.matchedTypeId ? getSectionValidCount(s) : 0), 0);
+  const totalValidCount = fileBlocks.reduce(
+    (sum, fb) => sum + fb.sections.reduce((s, sec) => s + (sec.matchedTypeId ? getSectionValidCount(sec) : 0), 0),
+    0,
+  );
 
-  const savableSections = sections.filter((s) => s.matchedTypeId && getSectionValidCount(s) > 0);
+  const hasSavable = fileBlocks.some(
+    (fb) => fb.sections.some((s) => s.matchedTypeId && getSectionValidCount(s) > 0),
+  );
+
+  // --- Save ---
 
   const handleSave = async () => {
-    if (savableSections.length === 0 || saving) return;
-
+    if (!hasSavable || saving) return;
     setSaving(true);
     setSaveError("");
+    let lastOrderId: number | null = null;
+
     try {
-      const orderId = await createOrder({
-        order_date: date,
-        lab_name: labName,
-        doctor_name: doctorName,
-        notes: "",
-        source: "pdf-import",
-      });
+      for (const fb of fileBlocks) {
+        const savable = fb.sections.filter((s) => s.matchedTypeId && getSectionValidCount(s) > 0);
+        if (savable.length === 0) continue;
 
-      for (const section of savableSections) {
-        const validRows = section.rows.filter(
-          (r) => r.indicatorId !== null && r.value.trim() !== "" && !isNaN(Number(r.value))
-        );
-
-        // Deduplicate by indicator_id — keep last occurrence (user's final pick)
-        const deduped = new Map<number, (typeof validRows)[number]>();
-        for (const row of validRows) {
-          deduped.set(row.indicatorId!, row);
-        }
-
-        const recordId = await createRecord({
-          analysis_type_id: section.matchedTypeId!,
-          record_date: date,
-          lab_name: labName,
-          doctor_name: doctorName,
+        const orderId = await createOrder({
+          order_date: fb.date,
+          lab_name: fb.labName,
+          doctor_name: fb.doctorName,
           notes: "",
           source: "pdf-import",
-          order_id: orderId,
+          pdf_data: fb.pdfBase64 || null,
+          pdf_filename: fb.pdfBase64 ? fb.fileName : null,
         });
+        lastOrderId = orderId;
 
-        const resultData = [...deduped.values()].map((row) => {
-          const ind = section.indicators.find((i) => i.id === row.indicatorId);
-          const numVal = Number(row.value);
-          const refMin = row.parsed.reference_min ?? ind?.reference_min ?? null;
-          const refMax = row.parsed.reference_max ?? ind?.reference_max ?? null;
-          const isFlagged =
-            (refMin !== null && numVal < refMin) || (refMax !== null && numVal > refMax) ? 1 : 0;
+        for (const section of savable) {
+          const validRows = section.rows.filter(
+            (r) => r.indicatorId !== null && r.value.trim() !== "" && !isNaN(Number(r.value)),
+          );
 
-          return {
+          const deduped = new Map<number, (typeof validRows)[number]>();
+          for (const row of validRows) deduped.set(row.indicatorId!, row);
+
+          const recordId = await createRecord({
+            analysis_type_id: section.matchedTypeId!,
+            record_date: fb.date,
+            lab_name: fb.labName,
+            doctor_name: fb.doctorName,
+            notes: "",
+            source: "pdf-import",
+            order_id: orderId,
+          });
+
+          const resultData = [...deduped.values()].map((row) => {
+            const ind = section.indicators.find((i) => i.id === row.indicatorId);
+            const numVal = Number(row.value);
+            const refMin = row.parsed.reference_min ?? ind?.reference_min ?? null;
+            const refMax = row.parsed.reference_max ?? ind?.reference_max ?? null;
+            const isFlagged =
+              (refMin !== null && numVal < refMin) || (refMax !== null && numVal > refMax) ? 1 : 0;
+            return {
+              record_id: recordId,
+              indicator_id: row.indicatorId!,
+              value: numVal,
+              ref_min_snapshot: refMin,
+              ref_max_snapshot: refMax,
+              is_flagged: isFlagged,
+            };
+          });
+
+          await saveResults(recordId, resultData);
+
+          await createImportHistory({
             record_id: recordId,
-            indicator_id: row.indicatorId!,
-            value: numVal,
-            ref_min_snapshot: refMin,
-            ref_max_snapshot: refMax,
-            is_flagged: isFlagged,
-          };
-        });
-
-        await saveResults(recordId, resultData);
-
-        await createImportHistory({
-          record_id: recordId,
-          source_type: "pdf",
-          file_path: state.fileName,
-          raw_text: state.rawText,
-          status: "completed",
-        });
+            source_type: "pdf",
+            file_path: fb.fileName,
+            raw_text: fb.rawText,
+            status: "completed",
+          });
+        }
       }
 
-      navigate(`/orders/${orderId}`, { replace: true });
+      if (fileBlocks.length === 1 && lastOrderId) {
+        navigate(`/orders/${lastOrderId}`, { replace: true });
+      } else {
+        navigate("/orders", { replace: true });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("Failed to save import:", message);
@@ -338,6 +343,8 @@ export default function OcrReviewScreen() {
       setSaving(false);
     }
   };
+
+  // --- Render ---
 
   return (
     <div style={styles.container}>
@@ -348,177 +355,157 @@ export default function OcrReviewScreen() {
       <h1 style={styles.title}>{t("import.reviewTitle")}</h1>
       <p style={styles.instructions}>{t("import.reviewInstructions")}</p>
 
-      {/* Metadata fields */}
-      <div style={styles.metaSection}>
-        <div style={styles.field}>
-          <label style={styles.label}>{t("records.date")}</label>
-          <input
-            type="date"
-            style={styles.input}
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </div>
-        <div style={styles.field}>
-          <label style={styles.label}>{t("records.lab")}</label>
-          <input
-            type="text"
-            style={styles.input}
-            value={labName}
-            onChange={(e) => setLabName(e.target.value)}
-          />
-        </div>
-        <div style={styles.field}>
-          <label style={styles.label}>{t("records.doctor")}</label>
-          <input
-            type="text"
-            style={styles.input}
-            value={doctorName}
-            onChange={(e) => setDoctorName(e.target.value)}
-          />
-        </div>
-      </div>
+      {fileBlocks.map((fb, fIdx) => (
+        <div key={fIdx} style={multiFile ? styles.fileBlock : undefined}>
+          {multiFile && <h2 style={styles.fileTitle}>{fb.fileName}</h2>}
 
-      {/* Sections — one per group */}
-      {sections.map((section, sIdx) => (
-        <div key={sIdx} style={styles.sectionCard}>
-          {/* Section header */}
-          <div style={styles.sectionHeader}>
-            <div>
-              <h2 style={styles.sectionTitle}>
-                {isEs ? section.group.analysis_type_es : section.group.analysis_type}
-              </h2>
-              <span style={styles.sectionCount}>
-                {section.group.results.length} {t("import.resultsGroup")}
-              </span>
+          {/* Metadata */}
+          <div style={styles.metaSection}>
+            <div style={styles.field}>
+              <label style={styles.label}>{t("records.date")}</label>
+              <input type="date" style={styles.input} value={fb.date} onChange={(e) => updateBlock(fIdx, { date: e.target.value })} />
             </div>
-            <span
-              style={{
-                ...styles.badge,
-                backgroundColor: section.isNewType ? "#FFF3E0" : "#E8F5E9",
-                color: section.isNewType ? "#E65100" : "#2E7D32",
-              }}
-            >
-              {section.isNewType ? t("import.newType") : t("import.existingType")}
-            </span>
+            <div style={styles.field}>
+              <label style={styles.label}>{t("records.lab")}</label>
+              <input type="text" style={styles.input} value={fb.labName} onChange={(e) => updateBlock(fIdx, { labName: e.target.value })} />
+            </div>
+            <div style={styles.field}>
+              <label style={styles.label}>{t("records.doctor")}</label>
+              <input type="text" style={styles.input} value={fb.doctorName} onChange={(e) => updateBlock(fIdx, { doctorName: e.target.value })} />
+            </div>
           </div>
 
-          {/* Type selector */}
-          <div style={styles.field}>
-            <label style={styles.label}>{t("import.selectType")}</label>
-            <select
-              style={styles.select}
-              value={section.matchedTypeId ?? ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === "new") {
-                  handleTypeChange(sIdx, null);
-                } else {
-                  handleTypeChange(sIdx, Number(val) || null);
-                }
-              }}
-            >
-              <option value="">{t("import.selectType")}...</option>
-              {allTypes.map((at) => (
-                <option key={at.id} value={at.id}>
-                  {typeName(at)}
-                </option>
-              ))}
-              <option value="new">+ {t("import.createNewType")}</option>
-            </select>
-          </div>
+          {/* Sections */}
+          {fb.sections.map((section, sIdx) => (
+            <div key={sIdx} style={styles.sectionCard}>
+              <div style={styles.sectionHeader}>
+                <div>
+                  <h2 style={styles.sectionTitle}>
+                    {isEs ? section.group.analysis_type_es : section.group.analysis_type}
+                  </h2>
+                  <span style={styles.sectionCount}>
+                    {section.group.results.length} {t("import.resultsGroup")}
+                  </span>
+                </div>
+                <span
+                  style={{
+                    ...styles.badge,
+                    backgroundColor: section.isNewType ? "#FFF3E0" : "#E8F5E9",
+                    color: section.isNewType ? "#E65100" : "#2E7D32",
+                  }}
+                >
+                  {section.isNewType ? t("import.newType") : t("import.existingType")}
+                </span>
+              </div>
 
-          {/* New type card */}
-          {section.isNewType && !section.typeCreated && (
-            <div style={styles.newTypeCard}>
-              <p style={styles.newTypeText}>
-                {t("import.newTypeDetected")}:{" "}
-                <strong>{isEs ? section.group.analysis_type_es : section.group.analysis_type}</strong>
-              </p>
-              <p style={styles.newTypeSubtext}>
-                {section.group.results.length} {t("import.resultsGroup")}:{" "}
-                {section.group.results.map((r) => (isEs ? r.name_es : r.name)).join(", ")}
-              </p>
-              <button
-                style={styles.createTypeButton}
-                onClick={() => handleCreateType(sIdx)}
-                disabled={section.creatingType}
-              >
-                {section.creatingType ? t("common.loading") : t("import.createAndMatch")}
-              </button>
-            </div>
-          )}
-
-          {/* Results matching table (only when type is matched) */}
-          {section.matchedTypeId && section.rows.length > 0 && (
-            <div style={styles.tableContainer}>
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>PDF Result</th>
-                    <th style={styles.th}>{t("import.matchedIndicator")}</th>
-                    <th style={styles.th}>{t("recordEntry.value")}</th>
-                    <th style={styles.th}>{t("analysisTypes.unit")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {section.rows.map((row, rIdx) => (
-                    <tr key={rIdx} style={rIdx % 2 === 0 ? styles.trEven : undefined}>
-                      <td style={styles.td}>
-                        <span style={styles.parsedName}>{row.parsed.name}</span>
-                        {row.parsed.name_es && row.parsed.name_es !== row.parsed.name && (
-                          <span style={styles.parsedNameEs}> ({row.parsed.name_es})</span>
-                        )}
-                      </td>
-                      <td style={styles.td}>
-                        <select
-                          style={{
-                            ...styles.matchSelect,
-                            ...(row.indicatorId === null ? { color: theme.colors.textSecondary } : {}),
-                          }}
-                          value={row.indicatorId ?? ""}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            handleIndicatorChange(sIdx, rIdx, val ? Number(val) : null);
-                          }}
-                        >
-                          <option value="">{t("import.skipIndicator")}</option>
-                          {section.indicators.map((ind) => (
-                            <option key={ind.id} value={ind.id}>
-                              {indName(ind)} ({ind.unit})
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={styles.td}>
-                        <input
-                          type="number"
-                          step="any"
-                          style={styles.valueInput}
-                          value={row.value}
-                          onChange={(e) => handleValueChange(sIdx, rIdx, e.target.value)}
-                        />
-                      </td>
-                      <td style={styles.td}>
-                        <span style={styles.unitText}>{row.parsed.unit}</span>
-                      </td>
-                    </tr>
+              {/* Type selector */}
+              <div style={styles.field}>
+                <label style={styles.label}>{t("import.selectType")}</label>
+                <select
+                  style={styles.select}
+                  value={section.matchedTypeId ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    handleTypeChange(fIdx, sIdx, val === "new" ? null : Number(val) || null);
+                  }}
+                >
+                  <option value="">{t("import.selectType")}...</option>
+                  {allTypes.map((at) => (
+                    <option key={at.id} value={at.id}>{typeName(at)}</option>
                   ))}
-                </tbody>
-              </table>
+                  <option value="new">+ {t("import.createNewType")}</option>
+                </select>
+              </div>
+
+              {/* New type card */}
+              {section.isNewType && !section.typeCreated && (
+                <div style={styles.newTypeCard}>
+                  <p style={styles.newTypeText}>
+                    {t("import.newTypeDetected")}:{" "}
+                    <strong>{isEs ? section.group.analysis_type_es : section.group.analysis_type}</strong>
+                  </p>
+                  <p style={styles.newTypeSubtext}>
+                    {section.group.results.length} {t("import.resultsGroup")}:{" "}
+                    {section.group.results.map((r) => (isEs ? r.name_es : r.name)).join(", ")}
+                  </p>
+                  <button
+                    style={styles.createTypeButton}
+                    onClick={() => handleCreateType(fIdx, sIdx)}
+                    disabled={section.creatingType}
+                  >
+                    {section.creatingType ? t("common.loading") : t("import.createAndMatch")}
+                  </button>
+                </div>
+              )}
+
+              {/* Results matching table */}
+              {section.matchedTypeId && section.rows.length > 0 && (
+                <div style={styles.tableContainer}>
+                  <table style={styles.table}>
+                    <thead>
+                      <tr>
+                        <th style={styles.th}>PDF Result</th>
+                        <th style={styles.th}>{t("import.matchedIndicator")}</th>
+                        <th style={styles.th}>{t("recordEntry.value")}</th>
+                        <th style={styles.th}>{t("analysisTypes.unit")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {section.rows.map((row, rIdx) => (
+                        <tr key={rIdx} style={rIdx % 2 === 0 ? styles.trEven : undefined}>
+                          <td style={styles.td}>
+                            <span style={styles.parsedName}>{row.parsed.name}</span>
+                            {row.parsed.name_es && row.parsed.name_es !== row.parsed.name && (
+                              <span style={styles.parsedNameEs}> ({row.parsed.name_es})</span>
+                            )}
+                          </td>
+                          <td style={styles.td}>
+                            <select
+                              style={{
+                                ...styles.matchSelect,
+                                ...(row.indicatorId === null ? { color: theme.colors.textSecondary } : {}),
+                              }}
+                              value={row.indicatorId ?? ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                updateRow(fIdx, sIdx, rIdx, { indicatorId: val ? Number(val) : null });
+                              }}
+                            >
+                              <option value="">{t("import.skipIndicator")}</option>
+                              {section.indicators.map((ind) => (
+                                <option key={ind.id} value={ind.id}>{indName(ind)} ({ind.unit})</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td style={styles.td}>
+                            <input
+                              type="number"
+                              step="any"
+                              style={styles.valueInput}
+                              value={row.value}
+                              onChange={(e) => updateRow(fIdx, sIdx, rIdx, { value: e.target.value })}
+                            />
+                          </td>
+                          <td style={styles.td}>
+                            <span style={styles.unitText}>{row.parsed.unit}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
       ))}
 
-      {/* Error display */}
       {saveError && (
         <div style={styles.errorCard}>
           <p style={styles.errorText}>{t("common.error")}: {saveError}</p>
         </div>
       )}
 
-      {/* Actions */}
       <div style={styles.actions}>
         <button style={styles.discardButton} onClick={() => navigate("/import")}>
           {t("import.discard")}
@@ -526,16 +513,12 @@ export default function OcrReviewScreen() {
         <button
           style={{
             ...styles.saveButton,
-            ...(totalValidCount === 0 || savableSections.length === 0 || saving
-              ? styles.saveButtonDisabled
-              : {}),
+            ...(totalValidCount === 0 || !hasSavable || saving ? styles.saveButtonDisabled : {}),
           }}
-          disabled={totalValidCount === 0 || savableSections.length === 0 || saving}
+          disabled={totalValidCount === 0 || !hasSavable || saving}
           onClick={handleSave}
         >
-          {saving
-            ? t("common.loading")
-            : `${t("import.save")} (${totalValidCount})`}
+          {saving ? t("common.loading") : `${t("import.save")} (${totalValidCount})`}
         </button>
       </div>
     </div>
@@ -561,26 +544,21 @@ function findMatchingType(group: ParsedGroup, types: AnalysisType[]): AnalysisTy
   const gEn = normalize(group.analysis_type);
   const gEs = normalize(group.analysis_type_es);
 
-  // Pass 1: exact normalized match
   for (const type of types) {
     const tEn = normalize(type.name_en);
     const tEs = normalize(type.name_es);
     if (tEn === gEn || tEs === gEs) return type;
   }
 
-  // Pass 2: substring match
   for (const type of types) {
     const tEn = normalize(type.name_en);
     const tEs = normalize(type.name_es);
     if (
       (gEn && tEn && (tEn.includes(gEn) || gEn.includes(tEn))) ||
       (gEs && tEs && (tEs.includes(gEs) || gEs.includes(tEs)))
-    ) {
-      return type;
-    }
+    ) return type;
   }
 
-  // Pass 3: word overlap >= 50%
   let bestMatch: AnalysisType | null = null;
   let bestScore = 0;
   for (const type of types) {
@@ -601,10 +579,7 @@ function findBestMatch(parsed: ParsedResult, indicators: Indicator[]): Indicator
   for (const ind of indicators) {
     const iEn = ind.name_en.toLowerCase();
     const iEs = ind.name_es.toLowerCase();
-
-    if (iEn.includes(pName) || pName.includes(iEn) || iEs.includes(pNameEs) || pNameEs.includes(iEs)) {
-      return ind;
-    }
+    if (iEn.includes(pName) || pName.includes(iEn) || iEs.includes(pNameEs) || pNameEs.includes(iEs)) return ind;
   }
   return null;
 }
@@ -630,6 +605,20 @@ const styles: Record<string, React.CSSProperties> = {
   },
   title: { fontSize: 24, fontWeight: 700, color: theme.colors.textPrimary, marginBottom: theme.spacing.sm },
   instructions: { color: theme.colors.textSecondary, marginBottom: theme.spacing.xl },
+  fileBlock: {
+    marginBottom: theme.spacing.xl,
+    padding: theme.spacing.lg,
+    borderRadius: theme.borderRadius,
+    border: `2px solid ${theme.colors.border}`,
+    backgroundColor: "#FAFAFA",
+  },
+  fileTitle: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: theme.colors.primary,
+    marginTop: 0,
+    marginBottom: theme.spacing.md,
+  },
   metaSection: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr 1fr",
@@ -675,16 +664,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "flex-start",
     marginBottom: theme.spacing.md,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: theme.colors.textPrimary,
-    margin: 0,
-  },
-  sectionCount: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-  },
+  sectionTitle: { fontSize: 18, fontWeight: 700, color: theme.colors.textPrimary, margin: 0 },
+  sectionCount: { fontSize: 13, color: theme.colors.textSecondary },
   badge: {
     display: "inline-block",
     padding: `2px ${theme.spacing.sm}`,
@@ -699,18 +680,8 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #FFE082",
     marginBottom: theme.spacing.md,
   },
-  newTypeText: {
-    margin: 0,
-    marginBottom: theme.spacing.sm,
-    color: theme.colors.textPrimary,
-    fontSize: 14,
-  },
-  newTypeSubtext: {
-    margin: 0,
-    marginBottom: theme.spacing.md,
-    color: theme.colors.textSecondary,
-    fontSize: 13,
-  },
+  newTypeText: { margin: 0, marginBottom: theme.spacing.sm, color: theme.colors.textPrimary, fontSize: 14 },
+  newTypeSubtext: { margin: 0, marginBottom: theme.spacing.md, color: theme.colors.textSecondary, fontSize: 13 },
   createTypeButton: {
     padding: `${theme.spacing.sm} ${theme.spacing.lg}`,
     backgroundColor: "#F57F17",
@@ -787,10 +758,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontWeight: 600,
   },
-  saveButtonDisabled: {
-    opacity: 0.5,
-    cursor: "not-allowed",
-  },
+  saveButtonDisabled: { opacity: 0.5, cursor: "not-allowed" },
   errorCard: {
     padding: theme.spacing.lg,
     backgroundColor: "#FFEBEE",

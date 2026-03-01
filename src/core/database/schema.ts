@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS analysis_types (
@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS orders (
   doctor_name TEXT NOT NULL DEFAULT '',
   notes TEXT NOT NULL DEFAULT '',
   source TEXT NOT NULL DEFAULT 'pdf-import',
+  pdf_data TEXT DEFAULT NULL,
+  pdf_filename TEXT DEFAULT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -204,5 +206,9 @@ export const MIGRATIONS: Record<number, string[]> = {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (symptom_id) REFERENCES symptoms(id) ON DELETE CASCADE
     )`,
+  ],
+  9: [
+    "ALTER TABLE orders ADD COLUMN pdf_data TEXT DEFAULT NULL",
+    "ALTER TABLE orders ADD COLUMN pdf_filename TEXT DEFAULT NULL",
   ],
 };
