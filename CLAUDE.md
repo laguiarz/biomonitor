@@ -19,24 +19,27 @@ https://github.com/laguiarz/biomonitor (branch: main)
 src/
   core/database/    - schema.ts, seed.ts, database.ts (full CRUD + types), index.ts
   core/i18n/        - i18n.ts (i18next config)
-  core/router/      - router.tsx (all 11 routes)
+  core/router/      - router.tsx (25 routes)
   core/theme/       - theme.ts (design tokens)
   core/services/    - llmParser.ts, pdfExtract.ts (AI-powered PDF import)
   components/       - AppLayout.tsx (responsive: side rail desktop / bottom nav mobile)
   features/
-    home/           - HomeScreen.tsx (dashboard: recent records, alerts, quick actions)
-    records/        - RecordsListScreen.tsx, RecordDetailScreen.tsx, RecordEntryScreen.tsx
-    trends/         - TrendsScreen.tsx (Recharts LineChart + reference bands + summary table)
+    home/           - HomeScreen.tsx (dashboard: alerts, recent records, health log)
+    records/        - RecordDetailScreen.tsx (view only; records created via orders)
+    trends/         - TrendsScreen.tsx (Recharts LineChart + reference bands + inline-editable summary table)
     analysis-types/ - AnalysisTypesScreen.tsx, AnalysisTypeDetailScreen.tsx
     orders/         - OrdersListScreen.tsx (supports ?typeId= filter), OrderDetailScreen.tsx
-    import/         - ImportScreen.tsx, OcrReviewScreen.tsx
+    import/         - ImportScreen.tsx, OcrReviewScreen.tsx (multi-file PDF import)
+    health-log/     - HealthLogHubScreen, vaccines/, medications/, milestones/, symptoms/ (CRUD each)
+    visit-prep/     - VisitPrepScreen.tsx, pdfGenerator.ts, specialtyMapping.ts
     settings/       - SettingsScreen.tsx (language toggle, Gemini API key, export)
+    labs/           - LabsHubScreen.tsx (mobile hub for lab sections)
   l10n/             - en.json, es.json
 src-tauri/
-  src/lib.rs        - Tauri builder with sql + opener plugins
+  src/lib.rs        - Tauri builder with sql + opener + fs plugins
   src/main.rs       - Entry point (biomonitor_lib::run())
-  Cargo.toml        - tauri, tauri-plugin-sql (sqlite), tauri-plugin-opener
-  capabilities/default.json - sql permissions enabled
+  Cargo.toml        - tauri, tauri-plugin-sql (sqlite), tauri-plugin-opener, tauri-plugin-fs
+  capabilities/default.json - sql + fs permissions enabled
 ```
 
 ## Database
@@ -46,10 +49,15 @@ src-tauri/
 ### Tables
 - **analysis_types**: id, name_en, name_es, description_en/es, icon_name, color_hex, is_builtin, is_active
 - **indicators**: id, analysis_type_id (FK), name_en, name_es, unit, reference_min, reference_max, decimal_places, formula
-- **orders**: id, order_date, lab_name, doctor_name, notes, source, created_at
+- **orders**: id, order_date, lab_name, doctor_name, notes, source, pdf_data, pdf_filename, created_at
 - **records**: id, analysis_type_id (FK), record_date, lab_name, doctor_name, notes, source, order_id (FK nullable), created_at
 - **results**: id, record_id (FK), indicator_id (FK), value, ref_min_snapshot, ref_max_snapshot, is_flagged, UNIQUE(record_id, indicator_id)
 - **import_history**: id, record_id (FK), source_type, file_path, raw_text, status, created_at
+- **vaccines**: id, vaccine_date, name, dose, lot_number, provider, notes, created_at
+- **medications**: id, name, dose, frequency, start_date, end_date, is_active, notes, created_at
+- **milestones**: id, milestone_date, title, category, notes, created_at
+- **symptoms**: id, symptom_date, name, severity, duration, notes, created_at
+- **symptom_photos**: id, symptom_id (FK), data, filename, created_at
 - **settings**: key (PK), value
 - **schema_version**: version (integer)
 
@@ -67,10 +75,13 @@ src-tauri/
 ## Key Features Implemented
 - **Distribute/Dissolve types**: `dissolveAnalysisType()` distributes indicators from one type to multiple target types, remapping results. `findMergeCandidates()` finds matches by name (exact first, then "contains" fallback in both directions). UI in AnalysisTypeDetailScreen.
 - **Merge types**: `mergeAnalysisTypes()` merges a source type into a single target.
-- **Computed indicators**: Formula-based indicators (e.g. ratio of two others), with backfill across existing records.
-- **Trends table**: Columns keyed by record_id (not date) so same-date records show as separate columns with "(1)", "(2)" disambiguators.
+- **Computed indicators**: Formula-based indicators (e.g. ratio of two others), with backfill across existing records. Results rounded to 2 decimal places.
+- **Trends table**: Columns keyed by record_id (not date) so same-date records show as separate columns with "(1)", "(2)" disambiguators. **Inline editing**: double-click any cell to edit or insert values via `upsertSingleResult()`. PDF icon in column headers opens source document.
 - **Orders filtering**: OrdersListScreen accepts `?typeId=X` to show only orders for a given analysis type. AnalysisTypesScreen cards have separate order-badge (clickable → orders) and edit button.
-- **PDF Import**: AI-powered via Gemini API key (stored in settings). Extracts text, parses with LLM, creates types/records.
+- **PDF Import**: AI-powered via Gemini API key (stored in settings). Extracts text, parses with LLM, creates types/records. Supports multi-file import. PDF binary stored in orders (pdf_data/pdf_filename).
+- **Health Log**: Vaccines, medications, milestones, symptoms (with photo attachments). Full CRUD for each. Aggregated timeline on home screen.
+- **Visit Prep**: Generate PDF summary for doctor visits with recent trends, medications, symptoms, and milestones. Specialty-based filtering.
+- **Records workflow**: Records are created only via orders/import (no standalone record creation). Nav simplified accordingly.
 
 ## Implementation Status
 
@@ -86,28 +97,40 @@ src-tauri/
 - Windows exe + MSI + NSIS installers generated
 - Pushed to GitHub
 
-### Phase 2: CRUD de Datos — MOSTLY DONE
+### Phase 2: CRUD de Datos — COMPLETE
 - Analysis Types: list (with order counts + edit/orders actions), detail, create/edit — WORKING
 - Indicators: add, edit inline, delete, computed formulas — WORKING
-- Record Entry with dynamic form by type — UI exists, needs testing
-- Records List with filters — UI exists, needs testing
-- Record Detail with range indicators — UI exists, needs testing
-- Edit and delete records — UI exists, needs testing
+- Record Detail with range indicators — WORKING
 - Merge and Distribute types — WORKING
+- Records created only via orders (standalone record entry removed)
 
-### Phase 3: Trends & Charts — MOSTLY DONE
+### Phase 3: Trends & Charts — COMPLETE
 - Trends screen with type selector + summary table + LineChart — WORKING
-- Table correctly handles multiple same-date records — FIXED
+- Table correctly handles multiple same-date records — WORKING
+- Inline editing: double-click cells to edit/insert values — WORKING
+- PDF icon in column headers to open source document — WORKING
 - Date range filter — TODO
 - Sparklines in Record Detail — TODO
 
-### Phase 4: Import & OCR — PARTIALLY DONE
-- PDF import with Gemini AI parsing — WORKING
+### Phase 4: Import & OCR — COMPLETE
+- Multi-file PDF import with Gemini AI parsing — WORKING
 - Import screen with type matching/creation — WORKING
+- PDF stored in orders for later reference — WORKING
 - Camera/gallery import — TODO (placeholder)
 
-### Phase 5: Polish — TODO
-- Home dashboard with real data — UI exists, needs verification
+### Phase 5: Health Log — COMPLETE
+- Vaccines: list, create, edit, delete — WORKING
+- Medications: list, create, edit, delete (active/inactive tracking) — WORKING
+- Milestones: list, create, edit, delete (categorized) — WORKING
+- Symptoms: list, create, edit, delete (with photo attachments) — WORKING
+- Aggregated timeline on home dashboard — WORKING
+
+### Phase 6: Visit Prep — COMPLETE
+- Generate PDF summary for doctor visits — WORKING
+- Specialty-based filtering of relevant data — WORKING
+
+### Phase 7: Polish — TODO
+- Home dashboard with real data — WORKING (alerts + recent records + health log)
 - Settings: export CSV/JSON, clear data — UI placeholder exists
 - Empty states, loading states, error handling
 - Responsive adaptations
