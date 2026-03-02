@@ -129,9 +129,48 @@ src-tauri/
 - Generate PDF summary for doctor visits — WORKING
 - Specialty-based filtering of relevant data — WORKING
 
-### Phase 7: Polish — TODO
+### Phase 7: Polish — IN PROGRESS
 - Home dashboard with real data — WORKING (alerts + recent records + health log)
 - Settings: export CSV/JSON, clear data — UI placeholder exists
-- Empty states, loading states, error handling
-- Responsive adaptations
-- Accessibility
+- Empty states, loading states, error handling — TODO
+- Responsive adaptations — TODO
+
+### Code Review & Hardening (2026-03-02) — DONE
+**Security:**
+- API key moved from URL query param to `x-goog-api-key` header
+- CSP enabled in tauri.conf.json (was null)
+- PDF text sanitized before LLM prompt (control chars stripped, 50K limit)
+- LLM JSON response validated against expected schema before use
+- Formula evaluator replaced: `Function()` → safe recursive descent parser
+- PDF file type validation on import
+- TODO deferred: API key plain text storage (acceptable for local app), broad fs scope
+
+**Database:**
+- Transactions (BEGIN/COMMIT/ROLLBACK) on 6 multi-step operations: deleteOrder, saveResults, backfillComputedIndicator, dissolveAnalysisType, mergeAnalysisTypes, deleteSymptom
+- 13 indexes added via migration 10 (all FKs + date columns)
+- deleteOrder() fixed to respect FK ON DELETE SET NULL (was doing manual cascade)
+- N+1 queries eliminated in backfillComputedIndicator (1+N → 2 queries) and findMergeCandidates (1+2N → 2 queries)
+- Schema version: 10
+
+**Performance:**
+- All routes lazy-loaded via React.lazy() except HomeScreen
+- Vite manualChunks: recharts and pdfjs-dist as separate bundles
+- Cargo release profile: opt-level 3, LTO, codegen-units 1
+- Bundle: 1.7MB monolith → ~400KB initial + lazy chunks
+
+**Accessibility:**
+- aria-labels on icon-only buttons (edit, PDF, remove photo)
+- htmlFor/id on all health-log form fields (4 entry screens)
+- aria-expanded on expandable nav groups
+- aria-label on nav elements
+- ESC key closes lightbox in symptom screens
+- WCAG AA contrast fix: warning #FF9800→#E65100, success #4CAF50→#2E7D32
+- setTimeout cleanup in SettingsScreen
+
+### Remaining Refactors (from code review)
+- **Code duplication**: CRUD list/entry pattern repeated 8+ times (~1000 lines saveable)
+- **Large components**: OcrReviewScreen (730 lines), AnalysisTypeDetailScreen (405 lines) should be split
+- **Error handling**: Inconsistent across screens (alert vs UI vs silent)
+- **Loading states**: Missing in some screens (VisitPrep, Settings)
+- **Input validation**: No date/length/range validation in forms
+- **PDF storage**: base64 TEXT in SQLite inflates DB ~33% vs BLOB
