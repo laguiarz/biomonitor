@@ -439,12 +439,8 @@ export async function updateOrder(id: number, data: Partial<Order>): Promise<voi
 
 export async function deleteOrder(id: number): Promise<void> {
   const database = await getDb();
-  // Delete results for all records in this order, then the records, then the order
-  await database.execute(
-    "DELETE FROM results WHERE record_id IN (SELECT id FROM records WHERE order_id = $1)",
-    [id]
-  );
-  await database.execute("DELETE FROM records WHERE order_id = $1", [id]);
+  // FK schema: records.order_id ON DELETE SET NULL — deleting the order
+  // automatically nullifies order_id on linked records (records + results preserved).
   await database.execute("DELETE FROM orders WHERE id = $1", [id]);
 }
 
@@ -498,15 +494,22 @@ export async function upsertSingleResult(
 
 export async function saveResults(recordId: number, results: Omit<Result, "id">[]): Promise<void> {
   const database = await getDb();
-  // Delete existing results for this record
-  await database.execute("DELETE FROM results WHERE record_id = $1", [recordId]);
+  await database.execute("BEGIN TRANSACTION");
+  try {
+    // Delete existing results for this record
+    await database.execute("DELETE FROM results WHERE record_id = $1", [recordId]);
 
-  for (const r of results) {
-    await database.execute(
-      `INSERT INTO results (record_id, indicator_id, value, ref_min_snapshot, ref_max_snapshot, is_flagged)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [recordId, r.indicator_id, r.value, r.ref_min_snapshot, r.ref_max_snapshot, r.is_flagged]
-    );
+    for (const r of results) {
+      await database.execute(
+        `INSERT INTO results (record_id, indicator_id, value, ref_min_snapshot, ref_max_snapshot, is_flagged)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [recordId, r.indicator_id, r.value, r.ref_min_snapshot, r.ref_max_snapshot, r.is_flagged]
+      );
+    }
+    await database.execute("COMMIT");
+  } catch (e) {
+    await database.execute("ROLLBACK");
+    throw e;
   }
 }
 
@@ -596,27 +599,51 @@ export async function getFlaggedResults(): Promise<(Result & { indicator_name_en
 export async function backfillComputedIndicator(indicator: Indicator): Promise<void> {
   if (!indicator.formula) return;
 
-  const records = await getRecords(indicator.analysis_type_id);
   const database = await getDb();
 
-  for (const record of records) {
-    const results = await getResults(record.id);
-    const valuesMap = new Map(results.map((r) => [r.indicator_id, r.value]));
-    const computed = evaluateFormula(indicator.formula, valuesMap);
+  // Single query: fetch all results for all records of this analysis type
+  const allResults = await database.select<{ record_id: number; indicator_id: number; value: number }[]>(
+    `SELECT res.record_id, res.indicator_id, res.value
+     FROM results res
+     JOIN records r ON r.id = res.record_id
+     WHERE r.analysis_type_id = $1`,
+    [indicator.analysis_type_id]
+  );
 
-    if (computed !== null) {
-      const isFlagged =
-        (indicator.reference_min !== null && computed < indicator.reference_min) ||
-        (indicator.reference_max !== null && computed > indicator.reference_max)
-          ? 1
-          : 0;
-
-      await database.execute(
-        `INSERT OR REPLACE INTO results (record_id, indicator_id, value, ref_min_snapshot, ref_max_snapshot, is_flagged)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [record.id, indicator.id, computed, indicator.reference_min, indicator.reference_max, isFlagged]
-      );
+  // Group results by record_id
+  const resultsByRecord = new Map<number, Map<number, number>>();
+  for (const row of allResults) {
+    let valuesMap = resultsByRecord.get(row.record_id);
+    if (!valuesMap) {
+      valuesMap = new Map();
+      resultsByRecord.set(row.record_id, valuesMap);
     }
+    valuesMap.set(row.indicator_id, row.value);
+  }
+
+  await database.execute("BEGIN TRANSACTION");
+  try {
+    for (const [recordId, valuesMap] of resultsByRecord) {
+      const computed = evaluateFormula(indicator.formula, valuesMap);
+
+      if (computed !== null) {
+        const isFlagged =
+          (indicator.reference_min !== null && computed < indicator.reference_min) ||
+          (indicator.reference_max !== null && computed > indicator.reference_max)
+            ? 1
+            : 0;
+
+        await database.execute(
+          `INSERT OR REPLACE INTO results (record_id, indicator_id, value, ref_min_snapshot, ref_max_snapshot, is_flagged)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [recordId, indicator.id, computed, indicator.reference_min, indicator.reference_max, isFlagged]
+        );
+      }
+    }
+    await database.execute("COMMIT");
+  } catch (e) {
+    await database.execute("ROLLBACK");
+    throw e;
   }
 }
 
@@ -630,6 +657,9 @@ export async function deleteResultsForIndicator(indicatorId: number): Promise<vo
 }
 
 // --- Settings ---
+// TODO: API key is stored in plain text. When the app grows beyond local-only use,
+// consider encrypting sensitive settings or using OS secure storage
+// (Windows Credential Manager / macOS Keychain / Linux Secret Service).
 
 export async function getSetting(key: string): Promise<string | null> {
   const database = await getDb();
@@ -688,51 +718,50 @@ export async function findMergeCandidates(sourceTypeId: number): Promise<MergeCa
   const database = await getDb();
   const sourceIndicators = await getIndicators(sourceTypeId);
 
-  const rows: MergeCandidateRow[] = [];
+  // Single query: fetch all candidate target indicators from other active types
+  type TargetRow = { id: number; analysis_type_id: number; name_en: string; name_es: string; type_name_en: string; type_name_es: string };
+  const targets = await database.select<TargetRow[]>(
+    `SELECT i.id, i.analysis_type_id, i.name_en, i.name_es,
+            at.name_en AS type_name_en, at.name_es AS type_name_es
+     FROM indicators i
+     JOIN analysis_types at ON at.id = i.analysis_type_id
+     WHERE i.analysis_type_id != $1 AND at.is_active = 1
+     ORDER BY at.name_en`,
+    [sourceTypeId]
+  );
 
-  const baseQuery = (whereClause: string) =>
-    `SELECT i2.id AS target_indicator_id, i2.analysis_type_id AS target_type_id,
-            at.name_en AS target_type_name_en, at.name_es AS target_type_name_es
-     FROM indicators i2
-     JOIN analysis_types at ON at.id = i2.analysis_type_id
-     WHERE i2.analysis_type_id != $1
-       AND at.is_active = 1
-       AND (${whereClause})
-     ORDER BY at.name_en`;
+  // Match in JS: exact first, then contains fallback
+  const normalize = (s: string) => s.toLowerCase().trim();
 
-  type MatchRow = { target_indicator_id: number; target_type_id: number; target_type_name_en: string; target_type_name_es: string };
-
-  const exactWhere = "LOWER(TRIM(i2.name_en)) = LOWER(TRIM($2)) OR LOWER(TRIM(i2.name_es)) = LOWER(TRIM($3))";
-  // "contains" in both directions: source name inside target OR target name inside source
-  const containsWhere =
-    `LOWER(TRIM(i2.name_en)) LIKE '%' || LOWER(TRIM($2)) || '%'
-     OR LOWER(TRIM(i2.name_es)) LIKE '%' || LOWER(TRIM($3)) || '%'
-     OR LOWER(TRIM($2)) LIKE '%' || LOWER(TRIM(i2.name_en)) || '%'
-     OR LOWER(TRIM($3)) LIKE '%' || LOWER(TRIM(i2.name_es)) || '%'`;
-
-  for (const srcInd of sourceIndicators) {
-    const params = [sourceTypeId, srcInd.name_en, srcInd.name_es];
+  return sourceIndicators.map((srcInd) => {
+    const srcEn = normalize(srcInd.name_en);
+    const srcEs = normalize(srcInd.name_es);
 
     // Try exact match first
-    let matches = await database.select<MatchRow[]>(baseQuery(exactWhere), params);
+    let matched = targets.filter((t) =>
+      normalize(t.name_en) === srcEn || normalize(t.name_es) === srcEs
+    );
 
-    // If no exact matches, try "contains" match
-    if (matches.length === 0) {
-      matches = await database.select<MatchRow[]>(baseQuery(containsWhere), params);
+    // Fallback: "contains" in both directions
+    if (matched.length === 0) {
+      matched = targets.filter((t) => {
+        const tEn = normalize(t.name_en);
+        const tEs = normalize(t.name_es);
+        return tEn.includes(srcEn) || tEs.includes(srcEs)
+            || srcEn.includes(tEn) || srcEs.includes(tEs);
+      });
     }
 
-    rows.push({
+    return {
       sourceIndicator: srcInd,
-      matches: matches.map((m) => ({
-        targetIndicatorId: m.target_indicator_id,
-        targetTypeId: m.target_type_id,
-        targetTypeName_en: m.target_type_name_en,
-        targetTypeName_es: m.target_type_name_es,
+      matches: matched.map((m) => ({
+        targetIndicatorId: m.id,
+        targetTypeId: m.analysis_type_id,
+        targetTypeName_en: m.type_name_en,
+        targetTypeName_es: m.type_name_es,
       })),
-    });
-  }
-
-  return rows;
+    };
+  });
 }
 
 export interface DissolveMapping {
@@ -768,78 +797,86 @@ export async function dissolveAnalysisType(
     byTarget.set(m.targetTypeId, list);
   }
 
-  for (const srcRecord of sourceRecords) {
-    // For each target type, find or create a record with same date + order_id
-    for (const [targetTypeId, typeMappings] of byTarget) {
-      let targetRecordId: number | null = null;
+  await database.execute("BEGIN TRANSACTION");
+  try {
+    for (const srcRecord of sourceRecords) {
+      // For each target type, find or create a record with same date + order_id
+      for (const [targetTypeId, typeMappings] of byTarget) {
+        let targetRecordId: number | null = null;
 
-      // Look for existing record with same date and order_id
-      if (srcRecord.order_id) {
-        const existing = await database.select<{ id: number }[]>(
-          `SELECT id FROM records
-           WHERE analysis_type_id = $1 AND record_date = $2 AND order_id = $3
-           LIMIT 1`,
-          [targetTypeId, srcRecord.record_date, srcRecord.order_id]
-        );
-        if (existing.length > 0) targetRecordId = existing[0].id;
-      }
-
-      if (targetRecordId === null) {
-        const existing = await database.select<{ id: number }[]>(
-          `SELECT id FROM records
-           WHERE analysis_type_id = $1 AND record_date = $2
-           LIMIT 1`,
-          [targetTypeId, srcRecord.record_date]
-        );
-        if (existing.length > 0) targetRecordId = existing[0].id;
-      }
-
-      if (targetRecordId === null) {
-        const res = await database.execute(
-          `INSERT INTO records (analysis_type_id, record_date, lab_name, doctor_name, notes, source, order_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [targetTypeId, srcRecord.record_date, srcRecord.lab_name, srcRecord.doctor_name, srcRecord.notes, srcRecord.source, srcRecord.order_id]
-        );
-        targetRecordId = res.lastInsertId ?? 0;
-      }
-
-      // Remap each result
-      for (const mapping of typeMappings) {
-        // Check if target already has a result for this indicator+record
-        const conflict = await database.select<{ id: number }[]>(
-          `SELECT id FROM results WHERE record_id = $1 AND indicator_id = $2 LIMIT 1`,
-          [targetRecordId, mapping.targetIndicatorId]
-        );
-
-        if (conflict.length > 0) {
-          // Delete the source result (target already has data)
-          await database.execute(
-            `DELETE FROM results WHERE record_id = $1 AND indicator_id = $2`,
-            [srcRecord.id, mapping.sourceIndicatorId]
+        // Look for existing record with same date and order_id
+        if (srcRecord.order_id) {
+          const existing = await database.select<{ id: number }[]>(
+            `SELECT id FROM records
+             WHERE analysis_type_id = $1 AND record_date = $2 AND order_id = $3
+             LIMIT 1`,
+            [targetTypeId, srcRecord.record_date, srcRecord.order_id]
           );
-        } else {
-          // Move the result to the target record + indicator
-          await database.execute(
-            `UPDATE results SET record_id = $1, indicator_id = $2
-             WHERE record_id = $3 AND indicator_id = $4`,
-            [targetRecordId, mapping.targetIndicatorId, srcRecord.id, mapping.sourceIndicatorId]
+          if (existing.length > 0) targetRecordId = existing[0].id;
+        }
+
+        if (targetRecordId === null) {
+          const existing = await database.select<{ id: number }[]>(
+            `SELECT id FROM records
+             WHERE analysis_type_id = $1 AND record_date = $2
+             LIMIT 1`,
+            [targetTypeId, srcRecord.record_date]
           );
+          if (existing.length > 0) targetRecordId = existing[0].id;
+        }
+
+        if (targetRecordId === null) {
+          const res = await database.execute(
+            `INSERT INTO records (analysis_type_id, record_date, lab_name, doctor_name, notes, source, order_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [targetTypeId, srcRecord.record_date, srcRecord.lab_name, srcRecord.doctor_name, srcRecord.notes, srcRecord.source, srcRecord.order_id]
+          );
+          targetRecordId = res.lastInsertId ?? 0;
+        }
+
+        // Remap each result
+        for (const mapping of typeMappings) {
+          // Check if target already has a result for this indicator+record
+          const conflict = await database.select<{ id: number }[]>(
+            `SELECT id FROM results WHERE record_id = $1 AND indicator_id = $2 LIMIT 1`,
+            [targetRecordId, mapping.targetIndicatorId]
+          );
+
+          if (conflict.length > 0) {
+            // Delete the source result (target already has data)
+            await database.execute(
+              `DELETE FROM results WHERE record_id = $1 AND indicator_id = $2`,
+              [srcRecord.id, mapping.sourceIndicatorId]
+            );
+          } else {
+            // Move the result to the target record + indicator
+            await database.execute(
+              `UPDATE results SET record_id = $1, indicator_id = $2
+               WHERE record_id = $3 AND indicator_id = $4`,
+              [targetRecordId, mapping.targetIndicatorId, srcRecord.id, mapping.sourceIndicatorId]
+            );
+          }
         }
       }
+
+      // Delete remaining unmapped results for this source record
+      await database.execute("DELETE FROM results WHERE record_id = $1", [srcRecord.id]);
+
+      // Delete the source record
+      await database.execute("DELETE FROM records WHERE id = $1", [srcRecord.id]);
     }
 
-    // Delete remaining unmapped results for this source record
-    await database.execute("DELETE FROM results WHERE record_id = $1", [srcRecord.id]);
+    // Delete source indicators
+    await database.execute("DELETE FROM indicators WHERE analysis_type_id = $1", [sourceId]);
 
-    // Delete the source record
-    await database.execute("DELETE FROM records WHERE id = $1", [srcRecord.id]);
+    // Delete the source type
+    await database.execute("DELETE FROM analysis_types WHERE id = $1", [sourceId]);
+
+    await database.execute("COMMIT");
+  } catch (e) {
+    await database.execute("ROLLBACK");
+    throw e;
   }
-
-  // Delete source indicators
-  await database.execute("DELETE FROM indicators WHERE analysis_type_id = $1", [sourceId]);
-
-  // Delete the source type
-  await database.execute("DELETE FROM analysis_types WHERE id = $1", [sourceId]);
 }
 
 // --- Merge Analysis Types ---
@@ -856,41 +893,49 @@ export async function mergeAnalysisTypes(sourceId: number, targetId: number): Pr
   // Normalize for matching: lowercase, trim
   const normalize = (s: string) => s.toLowerCase().trim();
 
-  for (const srcInd of sourceIndicators) {
-    const match = targetIndicators.find(
-      (t) => normalize(t.name_en) === normalize(srcInd.name_en)
-        || normalize(t.name_es) === normalize(srcInd.name_es)
+  await database.execute("BEGIN TRANSACTION");
+  try {
+    for (const srcInd of sourceIndicators) {
+      const match = targetIndicators.find(
+        (t) => normalize(t.name_en) === normalize(srcInd.name_en)
+          || normalize(t.name_es) === normalize(srcInd.name_es)
+      );
+
+      if (match) {
+        // Remap results from source indicator to target indicator
+        await database.execute(
+          `UPDATE results SET indicator_id = $1
+           WHERE indicator_id = $2
+           AND record_id NOT IN (SELECT record_id FROM results WHERE indicator_id = $1)`,
+          [match.id, srcInd.id]
+        );
+        // Delete any remaining results that would conflict
+        await database.execute("DELETE FROM results WHERE indicator_id = $1", [srcInd.id]);
+        // Delete the source indicator
+        await database.execute("DELETE FROM indicators WHERE id = $1", [srcInd.id]);
+      } else {
+        // Move indicator to target type
+        await database.execute(
+          "UPDATE indicators SET analysis_type_id = $1 WHERE id = $2",
+          [targetId, srcInd.id]
+        );
+      }
+    }
+
+    // Move all records from source to target
+    await database.execute(
+      "UPDATE records SET analysis_type_id = $1 WHERE analysis_type_id = $2",
+      [targetId, sourceId]
     );
 
-    if (match) {
-      // Remap results from source indicator to target indicator
-      await database.execute(
-        `UPDATE results SET indicator_id = $1
-         WHERE indicator_id = $2
-         AND record_id NOT IN (SELECT record_id FROM results WHERE indicator_id = $1)`,
-        [match.id, srcInd.id]
-      );
-      // Delete any remaining results that would conflict
-      await database.execute("DELETE FROM results WHERE indicator_id = $1", [srcInd.id]);
-      // Delete the source indicator
-      await database.execute("DELETE FROM indicators WHERE id = $1", [srcInd.id]);
-    } else {
-      // Move indicator to target type
-      await database.execute(
-        "UPDATE indicators SET analysis_type_id = $1 WHERE id = $2",
-        [targetId, srcInd.id]
-      );
-    }
+    // Delete the source analysis type
+    await database.execute("DELETE FROM analysis_types WHERE id = $1", [sourceId]);
+
+    await database.execute("COMMIT");
+  } catch (e) {
+    await database.execute("ROLLBACK");
+    throw e;
   }
-
-  // Move all records from source to target
-  await database.execute(
-    "UPDATE records SET analysis_type_id = $1 WHERE analysis_type_id = $2",
-    [targetId, sourceId]
-  );
-
-  // Delete the source analysis type
-  await database.execute("DELETE FROM analysis_types WHERE id = $1", [sourceId]);
 }
 
 // --- Vaccines ---
@@ -1123,8 +1168,15 @@ export async function updateSymptom(id: number, data: Partial<Symptom>): Promise
 
 export async function deleteSymptom(id: number): Promise<void> {
   const database = await getDb();
-  await database.execute("DELETE FROM symptom_photos WHERE symptom_id = $1", [id]);
-  await database.execute("DELETE FROM symptoms WHERE id = $1", [id]);
+  await database.execute("BEGIN TRANSACTION");
+  try {
+    await database.execute("DELETE FROM symptom_photos WHERE symptom_id = $1", [id]);
+    await database.execute("DELETE FROM symptoms WHERE id = $1", [id]);
+    await database.execute("COMMIT");
+  } catch (e) {
+    await database.execute("ROLLBACK");
+    throw e;
+  }
 }
 
 // --- Symptom Photos ---
@@ -1202,11 +1254,66 @@ export function evaluateFormula(formula: string, values: Map<number, number>): n
   if (!/^[\d\s+\-*/.()]+$/.test(expression)) return null;
 
   try {
-    // Safe evaluation: only arithmetic on validated expression
-    const result = Function(`"use strict"; return (${expression});`)() as number;
-    if (!isFinite(result)) return null;
+    const result = safeEval(expression);
+    if (result === null || !isFinite(result)) return null;
     return Math.round(result * 100) / 100;
   } catch {
     return null;
   }
+}
+
+/**
+ * Safe arithmetic evaluator using a simple recursive descent parser.
+ * Only supports: numbers, +, -, *, /, parentheses. No Function()/eval().
+ */
+function safeEval(expr: string): number | null {
+  const tokens = expr.match(/(\d+\.?\d*|[+\-*/()])/g);
+  if (!tokens) return null;
+  let pos = 0;
+
+  function peek(): string | undefined { return tokens![pos]; }
+  function consume(): string { return tokens![pos++]; }
+
+  function parseExpr(): number | null {
+    let left = parseTerm();
+    if (left === null) return null;
+    while (peek() === "+" || peek() === "-") {
+      const op = consume();
+      const right = parseTerm();
+      if (right === null) return null;
+      left = op === "+" ? left + right : left - right;
+    }
+    return left;
+  }
+
+  function parseTerm(): number | null {
+    let left = parseFactor();
+    if (left === null) return null;
+    while (peek() === "*" || peek() === "/") {
+      const op = consume();
+      const right = parseFactor();
+      if (right === null) return null;
+      if (op === "/" && right === 0) return null;
+      left = op === "*" ? left * right : left / right;
+    }
+    return left;
+  }
+
+  function parseFactor(): number | null {
+    if (peek() === "(") {
+      consume(); // (
+      const val = parseExpr();
+      if (peek() !== ")") return null;
+      consume(); // )
+      return val;
+    }
+    const token = consume();
+    if (token === undefined) return null;
+    const num = parseFloat(token);
+    return isNaN(num) ? null : num;
+  }
+
+  const result = parseExpr();
+  if (pos !== tokens.length) return null; // unconsumed tokens
+  return result;
 }

@@ -29,4 +29,15 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  build: {
+    target: "es2020",
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          recharts: ["recharts"],
+          pdfjs: ["pdfjs-dist"],
+        },
+      },
+    },
+  },
 }));

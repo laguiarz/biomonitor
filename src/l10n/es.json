@@ -179,7 +179,8 @@
     "existingType": "Tipo Existente",
     "newType": "Tipo Nuevo",
     "resultsGroup": "resultados",
-    "fileProgress": "Archivo {{current}} de {{total}}"
+    "fileProgress": "Archivo {{current}} de {{total}}",
+    "invalidFileType": "Solo se admiten archivos PDF."
   },
   "settings": {
     "title": "Ajustes",

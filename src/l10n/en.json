@@ -179,7 +179,8 @@
     "existingType": "Existing Type",
     "newType": "New Type",
     "resultsGroup": "results",
-    "fileProgress": "File {{current}} of {{total}}"
+    "fileProgress": "File {{current}} of {{total}}",
+    "invalidFileType": "Only PDF files are supported."
   },
   "settings": {
     "title": "Settings",

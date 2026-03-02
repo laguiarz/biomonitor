@@ -69,10 +69,11 @@ export default function AppLayout() {
             ...(isGroupActive ? styles.sideNavItemActive : {}),
           }}
           onClick={toggle}
+          aria-expanded={expanded}
         >
           <span style={styles.navIcon}>{icon}</span>
           <span style={styles.navLabel}>{t(labelKey)}</span>
-          <span style={styles.expandArrow}>{expanded ? "\u25B4" : "\u25BE"}</span>
+          <span style={styles.expandArrow} aria-hidden="true">{expanded ? "\u25B4" : "\u25BE"}</span>
         </button>
         {expanded &&
           children.map((child) => (
@@ -96,7 +97,7 @@ export default function AppLayout() {
   if (isDesktop) {
     return (
       <div style={styles.desktopLayout}>
-        <nav style={styles.sideRail}>
+        <nav style={styles.sideRail} aria-label="Main navigation">
           <div style={styles.logo}>BioMonitor</div>
 
           {/* Home */}
@@ -174,7 +175,7 @@ export default function AppLayout() {
       <main style={styles.mobileContent}>
         <Outlet />
       </main>
-      <nav style={styles.bottomNav}>
+      <nav style={styles.bottomNav} aria-label="Main navigation">
         {mobileItems.map((item) => (
           <button
             key={item.path}

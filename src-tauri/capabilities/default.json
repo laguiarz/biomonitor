@@ -23,6 +23,7 @@
     "fs:allow-write-file",
     {
       "identifier": "fs:scope",
+      "_comment": "TODO: $HOME/** is overly broad. Restrict to specific dirs when app matures.",
       "allow": [
         { "path": "$DOWNLOAD/**" },
         { "path": "$DOCUMENT/**" },

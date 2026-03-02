@@ -191,9 +191,12 @@ export default function TrendsScreen() {
                         {hasPdf && (
                           <span
                             role="button"
+                            tabIndex={0}
                             title="PDF"
+                            aria-label={`Open PDF for ${col.label}`}
                             style={styles.pdfIcon}
                             onClick={() => handleOpenPdf(orderId!)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleOpenPdf(orderId!); }}
                           >&#128196;</span>
                         )}
                       </th>

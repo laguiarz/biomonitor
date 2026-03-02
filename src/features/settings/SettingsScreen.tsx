@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { theme } from "../../core/theme/theme";
 import { getSetting, setSetting } from "../../core/database";
@@ -8,11 +8,13 @@ export default function SettingsScreen() {
 
   const [apiKey, setApiKey] = useState("");
   const [apiKeySaved, setApiKeySaved] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     getSetting("gemini_api_key").then((key) => {
       if (key) setApiKey(key);
     });
+    return () => clearTimeout(savedTimerRef.current);
   }, []);
 
   const changeLanguage = (lng: string) => {
@@ -22,7 +24,8 @@ export default function SettingsScreen() {
   const handleSaveApiKey = async () => {
     await setSetting("gemini_api_key", apiKey);
     setApiKeySaved(true);
-    setTimeout(() => setApiKeySaved(false), 3000);
+    clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => setApiKeySaved(false), 3000);
   };
 
   return (

@@ -35,6 +35,14 @@ export default function SymptomEntryScreen() {
   const [lightbox, setLightbox] = useState<string | null>(null);
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
     if (!id) return;
     const numId = Number(id);
     Promise.all([getSymptom(numId), getSymptomPhotos(numId)]).then(([s, p]) => {
@@ -103,24 +111,24 @@ export default function SymptomEntryScreen() {
       <h1 style={styles.title}>{isEdit ? t("symptoms.editTitle") : t("symptoms.addNew")}</h1>
 
       <div style={styles.form}>
-        <label style={styles.label}>{t("symptoms.date")}</label>
-        <input type="date" style={styles.input} value={symptomDate} onChange={(e) => setSymptomDate(e.target.value)} />
+        <label htmlFor="sym-date" style={styles.label}>{t("symptoms.date")}</label>
+        <input id="sym-date" type="date" style={styles.input} value={symptomDate} onChange={(e) => setSymptomDate(e.target.value)} />
 
-        <label style={styles.label}>{t("symptoms.name")}</label>
-        <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
+        <label htmlFor="sym-name" style={styles.label}>{t("symptoms.name")}</label>
+        <input id="sym-name" style={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
 
-        <label style={styles.label}>{t("symptoms.severity")}</label>
-        <select style={styles.input} value={severity} onChange={(e) => setSeverity(e.target.value as SymptomSeverity)}>
+        <label htmlFor="sym-severity" style={styles.label}>{t("symptoms.severity")}</label>
+        <select id="sym-severity" style={styles.input} value={severity} onChange={(e) => setSeverity(e.target.value as SymptomSeverity)}>
           {SEVERITIES.map((s) => (
             <option key={s} value={s}>{t(`symptoms.sev_${s}`)}</option>
           ))}
         </select>
 
-        <label style={styles.label}>{t("symptoms.duration")}</label>
-        <input style={styles.input} value={duration} onChange={(e) => setDuration(e.target.value)} placeholder={t("symptoms.durationPlaceholder")} />
+        <label htmlFor="sym-duration" style={styles.label}>{t("symptoms.duration")}</label>
+        <input id="sym-duration" style={styles.input} value={duration} onChange={(e) => setDuration(e.target.value)} placeholder={t("symptoms.durationPlaceholder")} />
 
-        <label style={styles.label}>{t("symptoms.notes")}</label>
-        <textarea style={{ ...styles.input, minHeight: 60 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <label htmlFor="sym-notes" style={styles.label}>{t("symptoms.notes")}</label>
+        <textarea id="sym-notes" style={{ ...styles.input, minHeight: 60 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
 
         {/* Photos */}
         <label style={styles.label}>{t("symptoms.photos")}</label>
@@ -133,7 +141,7 @@ export default function SymptomEntryScreen() {
                 style={styles.thumb}
                 onClick={() => setLightbox(photo.data)}
               />
-              <button style={styles.thumbRemove} onClick={() => handleRemovePhoto(i)}>
+              <button style={styles.thumbRemove} onClick={() => handleRemovePhoto(i)} aria-label={`Remove ${photo.filename}`}>
                 &times;
               </button>
             </div>

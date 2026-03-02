@@ -66,12 +66,83 @@ export interface ExistingTypeInfo {
  * Sends extracted PDF text to Gemini API for structured parsing.
  * If existingTypes is provided, the LLM will reuse those names instead of inventing new ones.
  */
+/**
+ * Sanitize extracted PDF text before injecting into LLM prompt.
+ * Strips control characters and truncates to a safe length.
+ */
+function sanitizePdfText(text: string): string {
+  // Remove control characters except newlines and tabs
+  const cleaned = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  // Truncate to ~50k chars (well within Gemini token limits, prevents abuse)
+  const MAX_LENGTH = 50_000;
+  return cleaned.length > MAX_LENGTH ? cleaned.slice(0, MAX_LENGTH) : cleaned;
+}
+
+/**
+ * Validate that the parsed JSON matches the expected ParsedReport structure.
+ */
+function validateParsedReport(data: unknown): ParsedReport {
+  if (typeof data !== "object" || data === null) {
+    throw new Error("Invalid response: expected an object");
+  }
+
+  const obj = data as Record<string, unknown>;
+
+  if (!Array.isArray(obj.groups)) {
+    throw new Error("Invalid response: missing 'groups' array");
+  }
+
+  const groups: ParsedGroup[] = obj.groups.map((g: unknown, gi: number) => {
+    if (typeof g !== "object" || g === null) {
+      throw new Error(`Invalid group at index ${gi}`);
+    }
+    const group = g as Record<string, unknown>;
+
+    if (typeof group.analysis_type !== "string" || typeof group.analysis_type_es !== "string") {
+      throw new Error(`Invalid group name at index ${gi}`);
+    }
+
+    if (!Array.isArray(group.results)) {
+      throw new Error(`Invalid results at group ${gi}`);
+    }
+
+    const results: ParsedResult[] = group.results.map((r: unknown, ri: number) => {
+      if (typeof r !== "object" || r === null) {
+        throw new Error(`Invalid result at group ${gi}, index ${ri}`);
+      }
+      const res = r as Record<string, unknown>;
+      return {
+        name: String(res.name ?? ""),
+        name_es: String(res.name_es ?? ""),
+        value: Number(res.value) || 0,
+        unit: String(res.unit ?? ""),
+        reference_min: res.reference_min != null ? Number(res.reference_min) : null,
+        reference_max: res.reference_max != null ? Number(res.reference_max) : null,
+      };
+    });
+
+    return {
+      analysis_type: group.analysis_type,
+      analysis_type_es: group.analysis_type_es,
+      results,
+    };
+  });
+
+  return {
+    date: typeof obj.date === "string" ? obj.date : null,
+    lab_name: String(obj.lab_name ?? ""),
+    doctor_name: String(obj.doctor_name ?? ""),
+    groups,
+  };
+}
+
 export async function parseMedicalResults(
   text: string,
   apiKey: string,
   existingTypes?: ExistingTypeInfo[]
 ): Promise<ParsedReport> {
-  let userPrompt = `Parse this lab report and return the structured JSON:\n\n${text}`;
+  const sanitized = sanitizePdfText(text);
+  let userPrompt = `Parse this lab report and return the structured JSON:\n\n${sanitized}`;
 
   if (existingTypes && existingTypes.length > 0) {
     const typeList = existingTypes
@@ -80,11 +151,14 @@ export async function parseMedicalResults(
     userPrompt += `\n\n---\nIMPORTANT: The following analysis types already exist in the database. If the report contains results that belong to one of these types, you MUST use the EXACT same analysis_type and analysis_type_es names. Only create a new name if none of these match:\n${typeList}`;
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [
@@ -111,6 +185,6 @@ export async function parseMedicalResults(
     throw new Error("No content in API response");
   }
 
-  const parsed: ParsedReport = JSON.parse(content);
-  return parsed;
+  const raw = JSON.parse(content);
+  return validateParsedReport(raw);
 }

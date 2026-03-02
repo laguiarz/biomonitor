@@ -67,6 +67,7 @@ export default function AnalysisTypesScreen() {
                 style={styles.editButton}
                 onClick={() => navigate(`/analysis-types/${type.id}`)}
                 title={t("common.edit")}
+                aria-label={`${t("common.edit")} ${lang === "es" ? type.name_es : type.name_en}`}
               >
                 &#9998;
               </button>

@@ -51,23 +51,23 @@ export default function VaccineEntryScreen() {
       <h1 style={styles.title}>{isEdit ? t("vaccines.editTitle") : t("vaccines.addNew")}</h1>
 
       <div style={styles.form}>
-        <label style={styles.label}>{t("vaccines.date")}</label>
-        <input type="date" style={styles.input} value={vaccineDate} onChange={(e) => setVaccineDate(e.target.value)} />
+        <label htmlFor="vaccine-date" style={styles.label}>{t("vaccines.date")}</label>
+        <input id="vaccine-date" type="date" style={styles.input} value={vaccineDate} onChange={(e) => setVaccineDate(e.target.value)} />
 
-        <label style={styles.label}>{t("vaccines.name")}</label>
-        <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
+        <label htmlFor="vaccine-name" style={styles.label}>{t("vaccines.name")}</label>
+        <input id="vaccine-name" style={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
 
-        <label style={styles.label}>{t("vaccines.dose")}</label>
-        <input style={styles.input} value={dose} onChange={(e) => setDose(e.target.value)} />
+        <label htmlFor="vaccine-dose" style={styles.label}>{t("vaccines.dose")}</label>
+        <input id="vaccine-dose" style={styles.input} value={dose} onChange={(e) => setDose(e.target.value)} />
 
-        <label style={styles.label}>{t("vaccines.lotNumber")}</label>
-        <input style={styles.input} value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} />
+        <label htmlFor="vaccine-lot" style={styles.label}>{t("vaccines.lotNumber")}</label>
+        <input id="vaccine-lot" style={styles.input} value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} />
 
-        <label style={styles.label}>{t("vaccines.provider")}</label>
-        <input style={styles.input} value={provider} onChange={(e) => setProvider(e.target.value)} />
+        <label htmlFor="vaccine-provider" style={styles.label}>{t("vaccines.provider")}</label>
+        <input id="vaccine-provider" style={styles.input} value={provider} onChange={(e) => setProvider(e.target.value)} />
 
-        <label style={styles.label}>{t("vaccines.notes")}</label>
-        <textarea style={{ ...styles.input, minHeight: 60 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <label htmlFor="vaccine-notes" style={styles.label}>{t("vaccines.notes")}</label>
+        <textarea id="vaccine-notes" style={{ ...styles.input, minHeight: 60 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
 
         <div style={styles.actions}>
           <button style={styles.cancelBtn} onClick={() => navigate("/health-log/vaccines")}>

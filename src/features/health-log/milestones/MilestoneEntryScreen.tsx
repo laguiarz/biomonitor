@@ -49,21 +49,21 @@ export default function MilestoneEntryScreen() {
       <h1 style={styles.title}>{isEdit ? t("milestones.editTitle") : t("milestones.addNew")}</h1>
 
       <div style={styles.form}>
-        <label style={styles.label}>{t("milestones.date")}</label>
-        <input type="date" style={styles.input} value={milestoneDate} onChange={(e) => setMilestoneDate(e.target.value)} />
+        <label htmlFor="ms-date" style={styles.label}>{t("milestones.date")}</label>
+        <input id="ms-date" type="date" style={styles.input} value={milestoneDate} onChange={(e) => setMilestoneDate(e.target.value)} />
 
-        <label style={styles.label}>{t("milestones.titleField")}</label>
-        <input style={styles.input} value={title} onChange={(e) => setTitle(e.target.value)} />
+        <label htmlFor="ms-title" style={styles.label}>{t("milestones.titleField")}</label>
+        <input id="ms-title" style={styles.input} value={title} onChange={(e) => setTitle(e.target.value)} />
 
-        <label style={styles.label}>{t("milestones.category")}</label>
-        <select style={styles.input} value={category} onChange={(e) => setCategory(e.target.value as MilestoneCategory)}>
+        <label htmlFor="ms-category" style={styles.label}>{t("milestones.category")}</label>
+        <select id="ms-category" style={styles.input} value={category} onChange={(e) => setCategory(e.target.value as MilestoneCategory)}>
           {CATEGORIES.map((c) => (
             <option key={c} value={c}>{t(`milestones.cat_${c}`)}</option>
           ))}
         </select>
 
-        <label style={styles.label}>{t("milestones.notes")}</label>
-        <textarea style={{ ...styles.input, minHeight: 60 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <label htmlFor="ms-notes" style={styles.label}>{t("milestones.notes")}</label>
+        <textarea id="ms-notes" style={{ ...styles.input, minHeight: 60 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
 
         <div style={styles.actions}>
           <button style={styles.cancelBtn} onClick={() => navigate("/health-log/milestones")}>

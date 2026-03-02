@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 export const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS analysis_types (
@@ -210,5 +210,20 @@ export const MIGRATIONS: Record<number, string[]> = {
   9: [
     "ALTER TABLE orders ADD COLUMN pdf_data TEXT DEFAULT NULL",
     "ALTER TABLE orders ADD COLUMN pdf_filename TEXT DEFAULT NULL",
+  ],
+  10: [
+    "CREATE INDEX IF NOT EXISTS idx_indicators_analysis_type_id ON indicators(analysis_type_id)",
+    "CREATE INDEX IF NOT EXISTS idx_records_analysis_type_id ON records(analysis_type_id)",
+    "CREATE INDEX IF NOT EXISTS idx_records_order_id ON records(order_id)",
+    "CREATE INDEX IF NOT EXISTS idx_records_record_date ON records(record_date DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_results_record_id ON results(record_id)",
+    "CREATE INDEX IF NOT EXISTS idx_results_indicator_id ON results(indicator_id)",
+    "CREATE INDEX IF NOT EXISTS idx_import_history_record_id ON import_history(record_id)",
+    "CREATE INDEX IF NOT EXISTS idx_symptom_photos_symptom_id ON symptom_photos(symptom_id)",
+    "CREATE INDEX IF NOT EXISTS idx_orders_order_date ON orders(order_date DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_vaccines_vaccine_date ON vaccines(vaccine_date DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_medications_start_date ON medications(start_date DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_milestones_milestone_date ON milestones(milestone_date DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_symptoms_symptom_date ON symptoms(symptom_date DESC)",
   ],
 };

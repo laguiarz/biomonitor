@@ -63,32 +63,32 @@ export default function MedicationEntryScreen() {
       <h1 style={styles.title}>{isEdit ? t("medications.editTitle") : t("medications.addNew")}</h1>
 
       <div style={styles.form}>
-        <label style={styles.label}>{t("medications.name")}</label>
-        <input style={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
+        <label htmlFor="med-name" style={styles.label}>{t("medications.name")}</label>
+        <input id="med-name" style={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
 
-        <label style={styles.label}>{t("medications.dose")}</label>
-        <input style={styles.input} value={dose} onChange={(e) => setDose(e.target.value)} />
+        <label htmlFor="med-dose" style={styles.label}>{t("medications.dose")}</label>
+        <input id="med-dose" style={styles.input} value={dose} onChange={(e) => setDose(e.target.value)} />
 
-        <label style={styles.label}>{t("medications.frequency")}</label>
-        <select style={styles.input} value={frequency} onChange={(e) => setFrequency(e.target.value as MedicationFrequency)}>
+        <label htmlFor="med-frequency" style={styles.label}>{t("medications.frequency")}</label>
+        <select id="med-frequency" style={styles.input} value={frequency} onChange={(e) => setFrequency(e.target.value as MedicationFrequency)}>
           {FREQUENCIES.map((f) => (
             <option key={f} value={f}>{t(`medications.freq_${f}`)}</option>
           ))}
         </select>
 
-        <label style={styles.label}>{t("medications.startDate")}</label>
-        <input type="date" style={styles.input} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <label htmlFor="med-start" style={styles.label}>{t("medications.startDate")}</label>
+        <input id="med-start" type="date" style={styles.input} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
 
-        <label style={styles.label}>{t("medications.endDate")}</label>
-        <input type="date" style={styles.input} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <label htmlFor="med-end" style={styles.label}>{t("medications.endDate")}</label>
+        <input id="med-end" type="date" style={styles.input} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
 
         <label style={styles.checkboxRow}>
           <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
           <span style={{ marginLeft: 8 }}>{t("medications.active")}</span>
         </label>
 
-        <label style={styles.label}>{t("medications.notes")}</label>
-        <textarea style={{ ...styles.input, minHeight: 60 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <label htmlFor="med-notes" style={styles.label}>{t("medications.notes")}</label>
+        <textarea id="med-notes" style={{ ...styles.input, minHeight: 60 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
 
         <div style={styles.actions}>
           <button style={styles.cancelBtn} onClick={() => navigate("/health-log/medications")}>

@@ -37,9 +37,15 @@ export default function ImportScreen() {
     const files = e.target.files;
     if (!files || files.length === 0 || !apiKey) return;
 
-    const fileList = Array.from(files);
+    const fileList = Array.from(files).filter((f) => f.type === "application/pdf" || f.name.endsWith(".pdf"));
     e.target.value = "";
     setError("");
+
+    if (fileList.length === 0) {
+      setError(t("import.invalidFileType"));
+      setStatus("error");
+      return;
+    }
 
     const fileResults: ImportedFile[] = [];
 
